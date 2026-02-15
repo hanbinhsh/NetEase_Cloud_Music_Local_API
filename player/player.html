@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer" />
+    <title>Netease Music Player</title>
+    <style>
+        :root {
+            --active-color: #ffffff;
+            --inactive-color: rgba(255, 255, 255, 0.6);
+            --blur-intensity: 60px;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #000; /* 仅作为兜底颜色 */
+        }
+
+        /* === 1. 背景层 (底层) === */
+        #bg-layer {
+            position: fixed;
+            top: -100px; left: -100px; right: -100px; bottom: -100px;
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            filter: blur(var(--blur-intensity)) brightness(0.6);
+            
+            /* 关键修改：改为正数层级，确保显示 */
+            z-index: 1; 
+            
+            transition: background-image 0.8s ease-in-out;
+        }
+
+        /* === 2. 内容层 (顶层) === */
+        .container {
+            position: relative; /* 必须设置 relative 才能让 z-index 生效 */
+            
+            /* 关键修改：比背景层高一级 */
+            z-index: 2; 
+            
+            display: flex;
+            height: 100vh;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 40px;
+            box-sizing: border-box;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* === 左侧：专辑封面与信息 === */
+        .info-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            max-width: 450px;
+        }
+
+        .album-art {
+            width: 350px;
+            height: 350px;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            object-fit: cover;
+            margin-bottom: 30px;
+            transition: transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+            background-color: rgba(255,255,255,0.1);
+        }
+        
+        .album-art.playing {
+            transform: scale(1.05);
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+        }
+
+        .song-title {
+            font-size: 32px;
+            font-weight: 800;
+            margin: 0 0 10px 0;
+            color: #fff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            line-height: 1.2;
+        }
+
+        .artist-name {
+            font-size: 20px;
+            color: rgba(255,255,255,0.9);
+            margin: 0;
+            font-weight: 500;
+            text-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        /* === 右侧：歌词区域 === */
+        .lyrics-section {
+            flex: 1.5;
+            height: 70vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: relative;
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            scrollbar-width: none;
+        }
+        .lyrics-section::-webkit-scrollbar { display: none; }
+
+        .lyrics-container {
+            padding: 50vh 0;
+            width: 100%;
+        }
+
+        .lrc-line {
+            padding: 16px 20px;
+            font-size: 26px;
+            font-weight: 700;
+            color: var(--inactive-color);
+            transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            cursor: default;
+            line-height: 1.5;
+            text-align: left;
+            margin-left: 20px;
+            border-radius: 8px;
+            white-space: pre-wrap; 
+            word-wrap: break-word;
+        }
+
+        .lrc-line .trans {
+            display: block;
+            font-size: 18px;
+            font-weight: 400;
+            margin-top: 6px;
+            opacity: 0.8;
+            color: rgba(255,255,255,0.7);
+        }
+
+        .lrc-line.active {
+            color: var(--active-color);
+            font-size: 36px; 
+            text-shadow: 0 0 30px rgba(255,255,255,0.4);
+        }
+
+        /* 移动端适配 */
+        @media (max-width: 768px) {
+            .container { flex-direction: column; padding: 20px; }
+            .info-section { flex: 0 0 auto; margin-bottom: 20px; width: 100%;}
+            .album-art { width: 220px; height: 220px; margin-bottom: 15px;}
+            .song-title { font-size: 24px; }
+            .lrc-line { font-size: 20px; text-align: center; margin-left: 0; }
+            .lrc-line.active { font-size: 24px; }
+            .lyrics-section { width: 100%; height: 50vh; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="bg-layer"></div>
+
+    <div class="container">
+        <div class="info-section">
+            <img src="" alt="Album Art" class="album-art" id="cover-img">
+            <div style="margin-top: 20px;">
+                <h1 class="song-title" id="title">Waiting...</h1>
+                <h2 class="artist-name" id="artist">请播放网易云音乐</h2>
+            </div>
+        </div>
+
+        <div class="lyrics-section" id="lyrics-viewport">
+            <div class="lyrics-container" id="lyrics-box"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = "http://192.168.31.22:18726/info";
+        const DEFAULT_COVER = "https://p2.music.126.net/tGHU62DTbzHOs014gv0zkA==/18806046882229308.jpg";
+
+        const elBg = document.getElementById('bg-layer');
+        const elCover = document.getElementById('cover-img');
+        const elTitle = document.getElementById('title');
+        const elArtist = document.getElementById('artist');
+        const elLyricsBox = document.getElementById('lyrics-box');
+        const elViewport = document.getElementById('lyrics-viewport');
+
+        let currentSongId = 0;
+        let lyricsData = [];
+        let lastActiveIndex = -1;
+
+        // 初始化
+        elCover.src = DEFAULT_COVER;
+        elBg.style.backgroundImage = `url("${DEFAULT_COVER}")`; // 强制使用双引号，更稳
+
+        async function fetchState() {
+            try {
+                const response = await fetch(API_URL + "?t=" + Date.now());
+                const data = await response.json();
+                
+                if(data && data.basic_info) {
+                    updateUI(data);
+                }
+            } catch (e) {}
+        }
+
+        function updateUI(data) {
+            // --- 1. 鲁棒性检查 ---
+            // 确保基础数据结构存在，否则直接退出，不干扰现有 UI
+            if (!data || !data.playback || !data.basic_info) return;
+
+            const info = data.basic_info;
+            const playback = data.playback;
+            const lrc = data.lyrics;
+
+            // --- 2. 歌曲切换逻辑 ---
+            if (info.id !== 0 && info.id !== currentSongId) {
+                console.log("检测到切歌:", info.name);
+                
+                // 更新文字和封面
+                elTitle.innerText = info.name || "未知歌曲";
+                elArtist.innerText = info.artist || "未知歌手";
+                let coverUrl = info.cover_url || DEFAULT_COVER;
+                elCover.src = coverUrl;
+                elBg.style.backgroundImage = `url("${coverUrl}")`;
+
+                // 处理新歌词
+                if (lrc && lrc.all_lyrics && lrc.all_lyrics.length > 0) {
+                    renderLyrics(lrc.all_lyrics);
+                } else {
+                    // 如果切歌瞬间没拿到歌词，先清空列表，确保不会显示上一首的歌词
+                    lyricsData = [];
+                    elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">正在加载歌词...</div>';
+                }
+                
+                currentSongId = info.id;
+                lastActiveIndex = -1; // 切歌后重置高亮索引
+            } 
+            
+            // --- 3. 补盲逻辑（解决歌词加载滞后问题） ---
+            // 如果 ID 没变，但之前没加载出歌词（lyricsData为空），而现在数据里有歌词了，则补画歌词
+            if (info.id === currentSongId && lyricsData.length === 0) {
+                if (lrc && lrc.all_lyrics && lrc.all_lyrics.length > 0) {
+                    renderLyrics(lrc.all_lyrics);
+                }
+            }
+
+            // --- 4. 进度同步逻辑 (核心修复) ---
+            // 无论 ID 是否改变，只要当前有歌词数据且正在播放，就必须执行同步
+            // 去掉之前可能存在的 data.playing 强校验，因为即便暂停，手动拖动也应该跳转
+            if (playback && playback.current_sec !== undefined) {
+                syncLyrics(playback.current_sec);
+            }
+
+            // 封面缩放动画
+            if (data.playing) elCover.classList.add('playing');
+            else elCover.classList.remove('playing');
+        }
+
+        function renderLyrics(lyrics) {
+            lyricsData = lyrics;
+            elLyricsBox.innerHTML = "";
+            lastActiveIndex = -1;
+
+            if (!lyrics || lyrics.length === 0) {
+                elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">🎵 纯音乐 / 暂无歌词</div>';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            lyrics.forEach((line, index) => {
+                const div = document.createElement('div');
+                div.className = 'lrc-line';
+                div.dataset.time = line.time;
+                let html = `<span>${line.text}</span>`;
+                if (line.trans) html += `<br><span class="trans">${line.trans}</span>`;
+                div.innerHTML = html;
+                fragment.appendChild(div);
+            });
+            elLyricsBox.appendChild(fragment);
+        }
+
+        function syncLyrics(currentTime) {
+            if (!lyricsData.length) return;
+            let activeIndex = -1;
+            for (let i = 0; i < lyricsData.length; i++) {
+                if (currentTime >= lyricsData[i].time) activeIndex = i;
+                else break;
+            }
+
+            if (activeIndex !== lastActiveIndex) {
+                const lines = elLyricsBox.children;
+                if (lastActiveIndex >= 0 && lastActiveIndex < lines.length) lines[lastActiveIndex].classList.remove('active');
+                if (activeIndex >= 0 && activeIndex < lines.length) {
+                    const activeLine = lines[activeIndex];
+                    activeLine.classList.add('active');
+                    const offset = activeLine.offsetTop - (elViewport.clientHeight / 2) + (activeLine.clientHeight / 2);
+                    elViewport.scrollTo({ top: offset, behavior: 'smooth' });
+                }
+                lastActiveIndex = activeIndex;
+            }
+        }
+
+        setInterval(fetchState, 200);
+        fetchState();
+    </script>
+</body>
+</html>
