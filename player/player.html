@@ -8,8 +8,11 @@
     <style>
         :root {
             --active-color: #ffffff;
-            --inactive-color: rgba(255, 255, 255, 0.6);
+            /* 底层文字颜色：稍暗的灰色，保证未播放时清晰 */
+            --inactive-color: rgba(255, 255, 255, 0.45); 
             --blur-intensity: 60px;
+            /* 羽化边缘宽度：调整这个值改变边缘模糊程度 (像素) */
+            --gradient-feather: 20px; 
         }
 
         body, html {
@@ -19,31 +22,23 @@
             width: 100%;
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            background: #000; /* 仅作为兜底颜色 */
+            background: #000;
         }
 
-        /* === 1. 背景层 (底层) === */
         #bg-layer {
             position: fixed;
             top: -100px; left: -100px; right: -100px; bottom: -100px;
             background-size: cover;
             background-position: center center;
             background-repeat: no-repeat;
-            filter: blur(var(--blur-intensity)) brightness(0.6);
-            
-            /* 关键修改：改为正数层级，确保显示 */
-            z-index: 1; 
-            
+            filter: blur(var(--blur-intensity)) brightness(0.5);
+            z-index: 1;
             transition: background-image 0.8s ease-in-out;
         }
 
-        /* === 2. 内容层 (顶层) === */
         .container {
-            position: relative; /* 必须设置 relative 才能让 z-index 生效 */
-            
-            /* 关键修改：比背景层高一级 */
-            z-index: 2; 
-            
+            position: relative;
+            z-index: 2;
             display: flex;
             height: 100vh;
             max-width: 1200px;
@@ -54,7 +49,6 @@
             justify-content: center;
         }
 
-        /* === 左侧：专辑封面与信息 === */
         .info-section {
             flex: 1;
             display: flex;
@@ -97,7 +91,6 @@
             text-shadow: 0 2px 5px rgba(0,0,0,0.5);
         }
 
-        /* === 右侧：歌词区域 === */
         .lyrics-section {
             flex: 1.5;
             height: 70vh;
@@ -116,18 +109,70 @@
         }
 
         .lrc-line {
-            padding: 16px 20px;
+            padding: 12px 20px;
+            margin-left: 20px;
+            border-radius: 8px;
+            text-align: left;
+            cursor: default;
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transform: scale(0.95);
+            transform-origin: left center;
+        }
+
+        /* === 双层逐字歌词核心样式 (优化版) === */
+        
+        /* 容器：去掉任何额外的 margin */
+        .yrc-word-box {
+            display: inline-block;
+            position: relative;
+            /* margin-right: 1px;  <-- 已删除，恢复原始字间距 */
+        }
+
+        /* 底层：原本的灰色字 (永远完整显示) */
+        .yrc-word-base {
+            color: var(--inactive-color);
+            white-space: pre-wrap;
+        }
+
+        /* 顶层：白色的高亮字 (通过遮罩显示) */
+        .yrc-word-mask {
+            position: absolute;
+            top: 0; left: 0;
+            color: var(--active-color);
+            white-space: pre-wrap;
+            width: 100%;
+            
+            /* 默认透明度为 0，防止 0% 时羽化边缘漏出白色 */
+            opacity: 0; 
+            
+            /* 遮罩逻辑：实心 -> 羽化渐变 -> 透明 */
+            --gradient-stop: var(--word-pct);
+            --gradient-end: calc(var(--word-pct) + var(--gradient-feather));
+            
+            -webkit-mask-image: linear-gradient(to right, 
+                black 0%, 
+                black var(--gradient-stop), 
+                transparent var(--gradient-end)
+            );
+            mask-image: linear-gradient(to right, 
+                black 0%, 
+                black var(--gradient-stop), 
+                transparent var(--gradient-end)
+            );
+            
+            /* 平滑过渡 */
+            /* transition: opacity 0.1s linear; */
+            will-change: mask-image, opacity;
+            pointer-events: none;
+        }
+
+        /* 普通LRC整行 */
+        .lrc-text {
             font-size: 26px;
             font-weight: 700;
             color: var(--inactive-color);
-            transition: all 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-            cursor: default;
-            line-height: 1.5;
-            text-align: left;
-            margin-left: 20px;
-            border-radius: 8px;
-            white-space: pre-wrap; 
-            word-wrap: break-word;
+            line-height: 1.4;
+            transition: color 0.4s;
         }
 
         .lrc-line .trans {
@@ -135,25 +180,55 @@
             font-size: 18px;
             font-weight: 400;
             margin-top: 6px;
-            opacity: 0.8;
-            color: rgba(255,255,255,0.7);
+            opacity: 0.7;
+            color: var(--inactive-color);
+            transition: color 0.4s;
         }
 
+        .lrc-line .roma {
+            display: block;
+            font-size: 16px;
+            font-weight: 400;
+            margin-bottom: 4px;
+            opacity: 0.6;
+            color: var(--inactive-color);
+            font-style: italic;
+            transition: color 0.4s;
+        }
+
+        /* === 激活行整体状态 === */
         .lrc-line.active {
-            color: var(--active-color);
-            font-size: 36px; 
-            text-shadow: 0 0 30px rgba(255,255,255,0.4);
+            transform: scale(1);
         }
 
-        /* 移动端适配 */
+        /* 普通歌词激活 */
+        .lrc-line.active .lrc-text {
+            color: var(--active-color);
+            font-size: 32px;
+            text-shadow: 0 0 20px rgba(255,255,255,0.3);
+        }
+
+        .lrc-line.active .trans { color: rgba(255,255,255,0.9); opacity: 1; }
+        .lrc-line.active .roma { color: rgba(255,255,255,0.8); opacity: 1; }
+
+        .yrc-line-content {
+            font-size: 28px;
+            font-weight: 700;
+            line-height: 1.4;
+        }
+        .lrc-line.active .yrc-line-content {
+            font-size: 34px; 
+        }
+
         @media (max-width: 768px) {
             .container { flex-direction: column; padding: 20px; }
-            .info-section { flex: 0 0 auto; margin-bottom: 20px; width: 100%;}
-            .album-art { width: 220px; height: 220px; margin-bottom: 15px;}
+            .info-section { flex: 0 0 auto; margin-bottom: 20px; width: 100%; }
+            .album-art { width: 220px; height: 220px; margin-bottom: 15px; }
             .song-title { font-size: 24px; }
-            .lrc-line { font-size: 20px; text-align: center; margin-left: 0; }
-            .lrc-line.active { font-size: 24px; }
             .lyrics-section { width: 100%; height: 50vh; }
+            .lrc-line { text-align: center; margin-left: 0; transform-origin: center center; }
+            .yrc-line-content { font-size: 22px; }
+            .lrc-line.active .yrc-line-content { font-size: 26px; }
         }
     </style>
 </head>
@@ -176,7 +251,7 @@
     </div>
 
     <script>
-        const API_URL = "http://192.168.31.22:18726/info";
+        const BASE_URL = "http://192.168.31.22:18726";
         const DEFAULT_COVER = "https://p2.music.126.net/tGHU62DTbzHOs014gv0zkA==/18806046882229308.jpg";
 
         const elBg = document.getElementById('bg-layer');
@@ -187,75 +262,235 @@
         const elViewport = document.getElementById('lyrics-viewport');
 
         let currentSongId = 0;
-        let lyricsData = [];
+        let lyricsData = []; 
         let lastActiveIndex = -1;
+        let isFetchingLyrics = false;
 
-        // 初始化
+        let lastServerTime = 0; 
+        let lastLocalTick = 0;  
+        let isPlaying = false;  
+        let lastRenderedTime = 0; 
+
         elCover.src = DEFAULT_COVER;
-        elBg.style.backgroundImage = `url("${DEFAULT_COVER}")`; // 强制使用双引号，更稳
+        elBg.style.backgroundImage = `url("${DEFAULT_COVER}")`;
 
         async function fetchState() {
             try {
-                const response = await fetch(API_URL + "?t=" + Date.now());
+                const response = await fetch(`${BASE_URL}/info?t=${Date.now()}`);
                 const data = await response.json();
-                
                 if(data && data.basic_info) {
-                    updateUI(data);
+                    updatePlaybackUI(data);
                 }
             } catch (e) {}
         }
 
-        function updateUI(data) {
-            // --- 1. 鲁棒性检查 ---
-            // 确保基础数据结构存在，否则直接退出，不干扰现有 UI
-            if (!data || !data.playback || !data.basic_info) return;
-
+        function updatePlaybackUI(data) {
             const info = data.basic_info;
             const playback = data.playback;
-            const lrc = data.lyrics;
 
-            // --- 2. 歌曲切换逻辑 ---
-            if (info.id !== 0 && info.id !== currentSongId) {
-                console.log("检测到切歌:", info.name);
-                
-                // 更新文字和封面
-                elTitle.innerText = info.name || "未知歌曲";
-                elArtist.innerText = info.artist || "未知歌手";
-                let coverUrl = info.cover_url || DEFAULT_COVER;
-                elCover.src = coverUrl;
-                elBg.style.backgroundImage = `url("${coverUrl}")`;
-
-                // 处理新歌词
-                if (lrc && lrc.all_lyrics && lrc.all_lyrics.length > 0) {
-                    renderLyrics(lrc.all_lyrics);
-                } else {
-                    // 如果切歌瞬间没拿到歌词，先清空列表，确保不会显示上一首的歌词
-                    lyricsData = [];
-                    elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">正在加载歌词...</div>';
-                }
-                
-                currentSongId = info.id;
-                lastActiveIndex = -1; // 切歌后重置高亮索引
-            } 
-            
-            // --- 3. 补盲逻辑（解决歌词加载滞后问题） ---
-            // 如果 ID 没变，但之前没加载出歌词（lyricsData为空），而现在数据里有歌词了，则补画歌词
-            if (info.id === currentSongId && lyricsData.length === 0) {
-                if (lrc && lrc.all_lyrics && lrc.all_lyrics.length > 0) {
-                    renderLyrics(lrc.all_lyrics);
-                }
-            }
-
-            // --- 4. 进度同步逻辑 (核心修复) ---
-            // 无论 ID 是否改变，只要当前有歌词数据且正在播放，就必须执行同步
-            // 去掉之前可能存在的 data.playing 强校验，因为即便暂停，手动拖动也应该跳转
             if (playback && playback.current_sec !== undefined) {
-                syncLyrics(playback.current_sec);
+                if (!data.playing) {
+                    lastRenderedTime = playback.current_sec;
+                }
+                
+                if (Math.abs(playback.current_sec - lastRenderedTime) > 0.5) {
+                    lastRenderedTime = playback.current_sec; 
+                }
+
+                lastServerTime = playback.current_sec;
+                lastLocalTick = Date.now();
+                isPlaying = data.playing;
             }
 
-            // 封面缩放动画
+            if (info.id !== 0) {
+                if (info.id !== currentSongId) {
+                    console.log(`[Frontend] 切歌: ${info.name}`);
+                    elTitle.innerText = info.name || "未知歌曲";
+                    elArtist.innerText = info.artist || "未知歌手";
+                    let coverUrl = info.cover_url || DEFAULT_COVER;
+                    elCover.src = coverUrl;
+                    elBg.style.backgroundImage = `url("${coverUrl}")`;
+
+                    currentSongId = info.id;
+                    lyricsData = [];
+                    lastActiveIndex = -1;
+                    elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">正在加载歌词...</div>';
+                    
+                    fetchLyrics();
+                } else if (lyricsData.length === 0 && !isFetchingLyrics) {
+                    fetchLyrics();
+                }
+            }
+
             if (data.playing) elCover.classList.add('playing');
             else elCover.classList.remove('playing');
+        }
+
+        async function fetchLyrics() {
+            if (isFetchingLyrics) return;
+            isFetchingLyrics = true;
+
+            try {
+                const response = await fetch(`${BASE_URL}/lyrics?t=${Date.now()}`);
+                const data = await response.json();
+
+                if (data.id !== currentSongId) return;
+
+                if (data.hasLyric || data.hasYrc) {
+                    const parsed = parseAndMergeAll(data);
+                    renderLyrics(parsed);
+                } else {
+                    renderLyrics([]); 
+                }
+            } catch (e) {
+                console.error(e);
+            } finally {
+                isFetchingLyrics = false;
+            }
+        }
+
+        function parseLrcLine(text) {
+            if (!text) return {};
+            const lines = text.split('\n');
+            const result = {}; 
+            // 兼容 : 和 . 分隔毫秒，以及 2位或3位毫秒
+            const regex = /\[(\d{2}):(\d{2})(?:[\.:](\d+))?\](.*)/;
+
+            lines.forEach(line => {
+                const match = line.match(regex);
+                if (match) {
+                    const min = parseInt(match[1]);
+                    const sec = parseInt(match[2]);
+                    let msVal = 0;
+                    const msStr = match[3] || "0";
+                    if (msStr.length === 2) msVal = parseInt(msStr) / 100;
+                    else if (msStr.length === 3) msVal = parseInt(msStr) / 1000;
+                    
+                    const content = match[4].trim();
+                    if (content) {
+                        const time = min * 60 + sec + msVal;
+                        result[time.toFixed(3)] = content;
+                    }
+                }
+            });
+            return result;
+        }
+
+        function parseYrc(text) {
+            if (!text) return [];
+            const lines = text.split('\n');
+            const result = [];
+            const lineRegex = /^\[(\d+),(\d+)\](.*)/;
+            const wordRegex = /\((\d+),(\d+),(\d+)\)([^\(]+)/g;
+
+            lines.forEach(line => {
+                const match = line.match(lineRegex);
+                if (match) {
+                    const startTime = parseInt(match[1]) / 1000; 
+                    const duration = parseInt(match[2]) / 1000;
+                    const contentRaw = match[3];
+                    
+                    const words = [];
+                    let wordMatch;
+                    let fullText = "";
+
+                    while ((wordMatch = wordRegex.exec(contentRaw)) !== null) {
+                        const wStart = parseInt(wordMatch[1]) / 1000;
+                        const wDur = parseInt(wordMatch[2]) / 1000;
+                        const wTxt = wordMatch[4];
+                        fullText += wTxt;
+                        words.push({
+                            time: wStart,
+                            duration: wDur,
+                            text: wTxt
+                        });
+                    }
+
+                    if (fullText) {
+                        result.push({
+                            time: startTime,
+                            duration: duration,
+                            text: fullText,
+                            words: words, 
+                            isYrc: true
+                        });
+                    }
+                }
+            });
+            return result;
+        }
+
+        // 【核心修改】智能合并逻辑：文本匹配优先，时间匹配兜底
+        function parseAndMergeAll(packet) {
+            const lrcMap = parseLrcLine(packet.lrc);
+            const transMap = parseLrcLine(packet.tlyric);
+            const romaMap = parseLrcLine(packet.romalrc);
+
+            // 1. 构建标准 LRC 列表（包含翻译和罗马音）作为“资料库”
+            // LRC/Trans/Roma 来源于同一套元数据，时间轴通常完全一致，所以这里用小容差合并
+            const lrcTimeline = Object.keys(lrcMap).sort((a, b) => parseFloat(a) - parseFloat(b));
+            const enrichedLrc = lrcTimeline.map(tStr => {
+                const t = parseFloat(tStr);
+                const text = lrcMap[tStr];
+                
+                const findInMap = (map) => {
+                    // 精确查找或极小误差查找
+                    for (const k in map) {
+                        if (Math.abs(parseFloat(k) - t) < 0.2) return map[k];
+                    }
+                    return "";
+                };
+
+                return {
+                    time: t,
+                    text: text,
+                    trans: findInMap(transMap),
+                    roma: findInMap(romaMap),
+                    // 生成归一化文本（去标点、空格、转小写），用于后续比对
+                    // 例如 "天国, それとも地獄" -> "天国それとも地獄"
+                    normalizedText: text.replace(/[^\w\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g, '').toLowerCase()
+                };
+            });
+
+            // 2. 如果没有 YRC，直接使用标准 LRC 列表
+            if (!packet.hasYrc || !packet.yrc) {
+                return enrichedLrc.map(item => ({ ...item, isYrc: false }));
+            }
+
+            // 3. 如果有 YRC，以 YRC 为主轴，尝试从 enrichedLrc 中“吸取”翻译和罗马音
+            const yrcLines = parseYrc(packet.yrc);
+            
+            return yrcLines.map(yLine => {
+                const yTextNorm = yLine.text.replace(/[^\w\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g, '').toLowerCase();
+                
+                // 策略 A: 文本相似度匹配 (优先)
+                // 解决 YRC 和 LRC 时间轴对不齐的问题
+                let match = null;
+                if (yTextNorm.length > 0) {
+                    match = enrichedLrc.find(l => {
+                        if (!l.normalizedText) return false;
+                        // 精确相等 或 包含关系
+                        return l.normalizedText === yTextNorm || 
+                               l.normalizedText.includes(yTextNorm) || 
+                               yTextNorm.includes(l.normalizedText);
+                    });
+                }
+
+                // 策略 B: 时间匹配 (兜底)
+                // 如果文本没匹配上（可能是纯音乐或拟声词），尝试找时间最近的
+                // 放宽阈值到 1.5秒
+                if (!match) {
+                    match = enrichedLrc.find(l => Math.abs(l.time - yLine.time) < 1.5);
+                }
+
+                return {
+                    ...yLine,
+                    isYrc: true,
+                    // 如果找到了匹配对象，把翻译和罗马音拿过来
+                    trans: match ? match.trans : "",
+                    roma: match ? match.roma : ""
+                };
+            });
         }
 
         function renderLyrics(lyrics) {
@@ -269,41 +504,131 @@
             }
 
             const fragment = document.createDocumentFragment();
+            
             lyrics.forEach((line, index) => {
                 const div = document.createElement('div');
                 div.className = 'lrc-line';
-                div.dataset.time = line.time;
-                let html = `<span>${line.text}</span>`;
-                if (line.trans) html += `<br><span class="trans">${line.trans}</span>`;
+                div.id = `line-${index}`; 
+
+                let html = ``;
+                if (line.roma) html += `<span class="roma">${line.roma}</span>`;
+
+                if (line.isYrc && line.words && line.words.length > 0) {
+                    html += `<div class="yrc-line-content">`;
+                    line.words.forEach((w) => {
+                        html += `<span class="yrc-word-box"><span class="yrc-word-base">${w.text}</span><span class="yrc-word-mask" data-start="${w.time}" data-dur="${w.duration}" style="--word-pct: 0%">${w.text}</span></span>`;
+                    });
+                    html += `</div>`;
+                } else {
+                    html += `<div class="lrc-text">${line.text}</div>`;
+                }
+
+                if (line.trans) html += `<span class="trans">${line.trans}</span>`;
                 div.innerHTML = html;
                 fragment.appendChild(div);
             });
             elLyricsBox.appendChild(fragment);
         }
 
+        function renderLoop() {
+            let preciseTime = lastServerTime;
+            if (isPlaying) {
+                const elapsed = (Date.now() - lastLocalTick) / 1000;
+                preciseTime += elapsed;
+            }
+
+            if (preciseTime < lastRenderedTime) {
+                preciseTime = lastRenderedTime; 
+            }
+
+            lastRenderedTime = preciseTime;
+
+            syncLyrics(preciseTime);
+            updateWordGradients(preciseTime);
+
+            requestAnimationFrame(renderLoop);
+        }
+
         function syncLyrics(currentTime) {
             if (!lyricsData.length) return;
+
             let activeIndex = -1;
-            for (let i = 0; i < lyricsData.length; i++) {
-                if (currentTime >= lyricsData[i].time) activeIndex = i;
-                else break;
+            for (let i = lyricsData.length - 1; i >= 0; i--) {
+                if (currentTime >= lyricsData[i].time) {
+                    activeIndex = i;
+                    break;
+                }
             }
 
             if (activeIndex !== lastActiveIndex) {
                 const lines = elLyricsBox.children;
-                if (lastActiveIndex >= 0 && lastActiveIndex < lines.length) lines[lastActiveIndex].classList.remove('active');
+                
+                if (lastActiveIndex >= 0 && lastActiveIndex < lines.length) {
+                    const prevLine = lines[lastActiveIndex];
+                    prevLine.classList.remove('active');
+                    const masks = prevLine.querySelectorAll('.yrc-word-mask');
+                    masks.forEach(w => {
+                        w.style.setProperty('--word-pct', '0%');
+                        w.style.opacity = '0';
+                    });
+                }
+
                 if (activeIndex >= 0 && activeIndex < lines.length) {
                     const activeLine = lines[activeIndex];
                     activeLine.classList.add('active');
+                    
                     const offset = activeLine.offsetTop - (elViewport.clientHeight / 2) + (activeLine.clientHeight / 2);
                     elViewport.scrollTo({ top: offset, behavior: 'smooth' });
+                    
+                    const masks = activeLine.querySelectorAll('.yrc-word-mask');
+                    masks.forEach(w => {
+                        w.style.setProperty('--word-pct', '0%');
+                        w.style.opacity = '0'; 
+                    });
                 }
+                
                 lastActiveIndex = activeIndex;
             }
         }
 
-        setInterval(fetchState, 200);
+        function updateWordGradients(currentTime) {
+            if (lastActiveIndex < 0 || lastActiveIndex >= lyricsData.length) return;
+            
+            const lineData = lyricsData[lastActiveIndex];
+            if (!lineData.isYrc) return; 
+
+            const lineEl = document.getElementById(`line-${lastActiveIndex}`);
+            if (!lineEl) return;
+
+            const masks = lineEl.querySelectorAll('.yrc-word-mask');
+            
+            masks.forEach(w => {
+                const start = parseFloat(w.dataset.start);
+                const dur = parseFloat(w.dataset.dur);
+                const end = start + dur;
+
+                let pct = 0;
+                if (currentTime < start) {
+                    pct = 0;
+                } else if (currentTime >= end) {
+                    pct = 100;
+                } else {
+                    pct = ((currentTime - start) / dur) * 100;
+                }
+                
+                if (pct <= 0) {
+                    w.style.opacity = '0';
+                } else {
+                    w.style.opacity = '1';
+                }
+                
+                w.style.setProperty('--word-pct', `${pct.toFixed(2)}%`);
+            });
+        }
+
+        setInterval(fetchState, 200); 
         fetchState();
+        requestAnimationFrame(renderLoop); 
     </script>
 </body>
 </html>

@@ -233,9 +233,6 @@ class SearchService:
 # ===========================
 # 1. 数据库服务
 # ===========================
-# ===========================
-# 1. 数据库服务 (全功能优化版：只读直连 + JSON自动解析)
-# ===========================
 class NeteaseV3Service:
     def __init__(self):
         self.user_home = os.path.expanduser("~")
@@ -432,80 +429,111 @@ class NeteaseV3Service:
 # ===========================
 class LyricService:
     def __init__(self):
-        self.lyrics_list = [] 
         self.current_id = None
         self.is_loading = False
+        self.parsed_list = [] 
+        self.lyric_packet = {
+            "id": 0, "hasLyric": False, "hasTrans": False, "hasRoma": False, "hasYrc": False,
+            "lrc": "", "tlyric": "", "romalrc": "", "yrc": ""
+        }
 
     def load_lyrics(self, song_id):
         if song_id == self.current_id: return
         self.current_id = song_id
-        self.lyrics_list = []
+        self.parsed_list = []
+        self.lyric_packet = {k: (False if "has" in k else "") for k in self.lyric_packet}
+        self.lyric_packet["id"] = song_id
         threading.Thread(target=self._fetch_lyrics, args=(song_id,), daemon=True).start()
 
     def _parse_lrc_text(self, lrc_content):
+        """解析标准 LRC 用于内部计时 (兼容 [mm:ss:xx] 格式)"""
         res = {}
         if not lrc_content: return res
-        pattern = re.compile(r'\[(\d{2}):(\d{2}(?:\.\d+)?)\](.*)')
+        
+        # 【关键修改】正则兼容冒号和点号作为毫秒分隔符
+        # 匹配: [00:00] 或 [00:00.00] 或 [00:00:00]
+        pattern = re.compile(r'\[(\d{2}):(\d{2})(?:[\.:](\d+))?\](.*)')
+        
         for line in lrc_content.split('\n'):
             match = pattern.search(line)
             if match:
-                t = int(match.group(1)) * 60 + float(match.group(2))
-                txt = match.group(3).strip()
-                if txt: res[t] = txt
+                min_str = match.group(1)
+                sec_str = match.group(2)
+                ms_str = match.group(3) if match.group(3) else "0"
+                content = match.group(4).strip()
+                
+                # 计算秒数
+                # 注意：有些非标lrc的毫秒可能是2位也可能是3位，这里做简单处理
+                # 如果 ms_str 是 "61"，它代表 0.61s
+                if len(ms_str) == 2:
+                    ms_val = int(ms_str) / 100.0
+                elif len(ms_str) == 3:
+                    ms_val = int(ms_str) / 1000.0
+                else:
+                    ms_val = 0.0
+                
+                t = int(min_str) * 60 + int(sec_str) + ms_val
+                
+                if content: res[t] = content
         return res
 
     def _fetch_lyrics(self, target_song_id):
         self.is_loading = True
         try:
-            url = f"http://music.163.com/api/song/lyric?id={target_song_id}&lv=1&kv=1&tv=-1"
-            resp = requests.get(url, timeout=5).json()
-            
-            if target_song_id != self.current_id:
-                print(f"[歌词] 丢弃过期数据: {target_song_id}")
-                return
+            url = (
+                f"http://music.163.com/api/song/lyric?id={target_song_id}"
+                f"&cp=false&lv=0&kv=0&tv=0&rv=0&yv=0&ytv=0&yrv=0"
+            )
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Referer': 'http://music.163.com/'
+            }
+            resp = requests.get(url, headers=headers, timeout=5).json()
+            if target_song_id != self.current_id: return
 
-            raw_ori = resp.get('lrc', {}).get('lyric', "")
+            raw_lrc = resp.get('lrc', {}).get('lyric', "")
             raw_trans = resp.get('tlyric', {}).get('lyric', "")
-            
-            ori_dict = self._parse_lrc_text(raw_ori)
+            raw_roma = resp.get('romalrc', {}).get('lyric', "")
+            raw_yrc = resp.get('yrc', {}).get('lyric', "")
+            if not raw_yrc: raw_yrc = resp.get('klyric', {}).get('lyric', "")
+
+            with state_lock:
+                self.lyric_packet = {
+                    "id": target_song_id,
+                    "hasLyric": bool(raw_lrc), "hasTrans": bool(raw_trans), "hasRoma": bool(raw_roma), "hasYrc": bool(raw_yrc),
+                    "lrc": raw_lrc, "tlyric": raw_trans, "romalrc": raw_roma, "yrc": raw_yrc
+                }
+
+            ori_dict = self._parse_lrc_text(raw_lrc)
             trans_dict = self._parse_lrc_text(raw_trans)
-            
             merged = []
             for t in sorted(ori_dict.keys()):
                 merged.append({
-                    "time": t,
-                    "text": ori_dict[t],
-                    "trans": trans_dict.get(t, "")
+                    "time": t, "text": ori_dict[t], "trans": trans_dict.get(t, "")
                 })
-            
-            if target_song_id != self.current_id: return
-
-            with state_lock:
-                self.lyrics_list = merged
+            self.parsed_list = merged
                 
-        except Exception as e:
-            print(f"Lyric Error: {e}")
+        except Exception as e: print(f"Lyric Error: {e}")
         finally:
-            if target_song_id == self.current_id:
-                self.is_loading = False
+            if target_song_id == self.current_id: self.is_loading = False
 
     def get_current_line(self, current_time):
-        if not self.lyrics_list: return "", ""
+        if not self.parsed_list: return "", ""
         curr_ori, curr_trans = "", ""
-        for item in self.lyrics_list:
+        for item in self.parsed_list:
             if current_time >= item['time']:
                 curr_ori = item['text']
                 curr_trans = item['trans']
-            else:
-                break
+            else: break
         return curr_ori, curr_trans
 
-    def get_all_lyrics(self):
-        return self.lyrics_list
+    def get_full_packet(self):
+        return self.lyric_packet
     
     def clear(self):
         self.current_id = None
-        self.lyrics_list = []
+        self.parsed_list = []
+        self.lyric_packet = {k: (False if "has" in k else "") for k in self.lyric_packet}
 
 # ===========================
 # 3. 后台监控线程
@@ -513,13 +541,10 @@ class LyricService:
 def format_t(s):
     return f"{int(s//60):02}:{int(s%60):02}"
 
-def monitor_loop():
-    v3 = NeteaseV3Service()
-    lrc_svc = LyricService()
-    
+def monitor_loop(v3, lrc_svc):
     # === 内存指针配置 ===
     PTR_STATIC_OFFSET = 0x01DDE250
-    PTR_OFFSETS = [0x10, 0, 0x10, 0x68, 0] # 顺序
+    PTR_OFFSETS = [0x10, 0, 0x10, 0x68, 0]
     
     OFF_CURR = 0x1D7E8F8
     OFF_TOTAL = 0x1DDEF58
@@ -705,7 +730,6 @@ def monitor_loop():
 
             # 实时更新进度和歌词
             cur_txt, cur_trans = lrc_svc.get_current_line(ct)
-            full_lyrics = lrc_svc.get_all_lyrics()
             
             with state_lock:
                 API_STATE['playing'] = is_moving
@@ -716,11 +740,8 @@ def monitor_loop():
                     "formatted_current": format_t(ct),
                     "formatted_total": format_t(tt)
                 }
-                if full_lyrics:
-                    API_STATE['lyrics']['current_line'] = cur_txt
-                    API_STATE['lyrics']['current_trans'] = cur_trans
-                    API_STATE['lyrics']['all_lyrics'] = full_lyrics
-
+                API_STATE['lyrics']['current_line'] = cur_txt
+                API_STATE['lyrics']['current_trans'] = cur_trans
             time.sleep(0.1)
 
         except Exception as e:
@@ -733,26 +754,53 @@ def monitor_loop():
 app = Flask(__name__)
 CORS(app)
 
+# 初始化服务实例
+v3 = NeteaseV3Service()
+lrc_svc = LyricService() # 注意：这里需要改为全局单例，或者在 monitor_loop 里引用同一个实例
+
+# 【关键修改】为了让 Flask 和 monitor_loop 共享同一个 LyricService 实例
+# 我们需要把 monitor_loop 里的 lrc_svc 提出来变成全局变量，或者像下面这样：
+# 建议直接在文件最上方定义全局 lrc_service，然后在 monitor_loop 里使用 global lrc_service
+
 @app.route('/info', methods=['GET'])
 def get_info():
     with state_lock:
-        json_str = json.dumps(API_STATE, ensure_ascii=False)
-        return Response(json_str, mimetype='application/json')
+        # 这里不需要返回 all_lyrics 了，前端去调 /lyrics 接口拿
+        # 我们只返回 playback, basic_info 和 lyrics.current_line
+        
+        # 构造一个轻量级的响应副本
+        lite_state = {
+            "playing": API_STATE["playing"],
+            "process_active": API_STATE["process_active"],
+            "basic_info": API_STATE["basic_info"],
+            "playback": API_STATE["playback"],
+            "lyrics": {
+                "current_line": API_STATE["lyrics"]["current_line"],
+                "current_trans": API_STATE["lyrics"]["current_trans"]
+            }
+        }
+        return Response(json.dumps(lite_state, ensure_ascii=False), mimetype='application/json')
+
+@app.route('/lyrics', methods=['GET'])
+def get_lyrics():
+    """【新增】专门获取歌词的接口"""
+    # 直接从 lrc_service 获取最新的包
+    data = lrc_svc.get_full_packet()
+    return Response(json.dumps(data, ensure_ascii=False), mimetype='application/json')
     
 @app.route('/history', methods=['GET'])
 def get_history():
-    v3 = NeteaseV3Service()
     data = v3.get_history_list(limit=20) 
     return Response(json.dumps({"code": 200, "data": data}, ensure_ascii=False), mimetype='application/json')
 
 @app.route('/playlist', methods=['GET'])
 def get_playlist():
-    v3 = NeteaseV3Service()
     data = v3.get_playlist_list()
     return Response(json.dumps({"code": 200, "data": data}, ensure_ascii=False), mimetype='application/json')
 
 if __name__ == "__main__":
-    t = threading.Thread(target=monitor_loop, daemon=True)
+    # 在这里把全局的 service 传给 monitor
+    t = threading.Thread(target=monitor_loop, args=(v3, lrc_svc), daemon=True)
     t.start()
     print(f"API 服务已启动: http://127.0.0.1:18726/info")
     app.run(host='0.0.0.0', port=18726, debug=False)
