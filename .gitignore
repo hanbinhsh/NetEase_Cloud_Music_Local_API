@@ -1,1 +1,5 @@
 .vscode
+ce
+*.dat
+*.dat-wal
+*.dat-shm
