@@ -473,13 +473,16 @@ class NeteaseV3Service:
         """获取用户歌单列表 (自动解析 JSON)"""
         return self._get_all_raw_data("web_user_playlist")
     
+    def __init__(self):
+        # ... 原有初始化 ...
+        # 新增缓存变量
+        self.playing_list_cache = []
+        self.playing_list_mtime = 0
+
     def get_raw_playing_list(self):
         """
-        获取原始的播放列表数据 (不做任何字段过滤)
-        来源: webdata/file/playingList
+        获取原始的播放列表数据 (带缓存优化)
         """
-        # 1. 定位文件路径
-        # 使用 os.environ['LOCALAPPDATA'] 能更准确地定位到 C:\Users\ASUS\AppData\Local
         file_path = os.path.join(
             os.environ['LOCALAPPDATA'], 
             r"Netease\CloudMusic\webdata\file\playingList"
@@ -489,22 +492,34 @@ class NeteaseV3Service:
             return []
 
         try:
-            # 2. 读取文件
+            # 检查文件修改时间
+            current_mtime = os.path.getmtime(file_path)
+            # 如果文件没变，直接返回缓存，不再读盘
+            if current_mtime == self.playing_list_mtime and self.playing_list_cache:
+                return self.playing_list_cache
+
+            # 文件变了，重新读取
             with open(file_path, 'r', encoding='utf-8') as f:
                 content = f.read()
                 if not content: return []
                 
-                # 3. 解析 JSON
                 root_data = json.loads(content)
+                result = []
                 
-                # 4. 直接返回 list 键对应的内容，不做任何处理
                 if isinstance(root_data, dict) and 'list' in root_data:
-                    return root_data['list']
+                    result = root_data['list']
                 elif isinstance(root_data, list):
-                    # 某些极老版本可能直接存的是 list，兼容一下
-                    return root_data
+                    result = root_data
                 
-                return []
+                # 更新缓存
+                self.playing_list_cache = result
+                self.playing_list_mtime = current_mtime
+                # print(f"[列表更新] 检测到播放列表文件变更，已刷新缓存。数量: {len(result)}")
+                return result
+                
+        except Exception as e:
+            print(f"[PlayingList Error] 读取失败: {e}")
+            return self.playing_list_cache # 出错时返回旧缓存
                 
         except Exception as e:
             print(f"[PlayingList Error] 读取失败: {e}")
@@ -836,6 +851,8 @@ def monitor_loop(v3, lrc_svc):
                 # 5. 更新全局状态
                 # ==========================================
                 if current_track_full:
+                    song_id = current_track_full.get("id")
+
                     song_name = current_track_full.get('name')
                     artists = current_track_full.get('artists') or current_track_full.get('ar', [])
                     all_artist_names = [a.get('name') for a in artists]
@@ -845,16 +862,13 @@ def monitor_loop(v3, lrc_svc):
                     current_mode = mode_svc.get_mode()
 
                     # 计算邻居歌曲
-                    curr_id = API_STATE['basic_info']['id']
                     prev_track, next_track = {}, {}
-                    if curr_id:
+                    if song_id:
                     # 只有当 ID 存在且有效时才计算
-                        prev_track, next_track = v3.get_playback_neighbors(curr_id, current_mode)
+                        prev_track, next_track = v3.get_playback_neighbors(song_id, current_mode)
                     
                     # 更新缓存标题，防止降级逻辑死循环
                     current_song_title_cache = f"{song_name} - {'/'.join(all_artist_names)}"
-                    
-                    song_id = current_track_full.get("id")
                     
                     # 加载歌词
                     lrc_svc.load_lyrics(song_id)
@@ -872,6 +886,8 @@ def monitor_loop(v3, lrc_svc):
                             "duration": current_track_full.get("duration", 0)
                         }
                         API_STATE['db_info'] = current_track_full
+                        API_STATE['playback']['prev_song'] = prev_track
+                        API_STATE['playback']['next_song'] = next_track
 
                 # 实时更新进度和歌词
                 cur_txt, cur_trans = lrc_svc.get_current_line(ct)
