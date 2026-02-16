@@ -4,9 +4,17 @@ debug_v3为最新版本
 
 内含多种兜底逻辑
 
-已知问题：
+支持罗马音/逐字歌词显示
 
-フレグランス (Sped Up Version)  茉ひる / RINZO  无法获取歌词
+访问接口：
+
+/info 基础信息
+
+/lyrics 歌词
+
+/playlist 没做好
+
+/history 没做好
 
 参考了
 
