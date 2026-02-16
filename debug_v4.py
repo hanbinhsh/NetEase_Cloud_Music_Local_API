@@ -11,6 +11,7 @@ import ctypes
 from flask import Flask, Response
 from flask_cors import CORS
 from urllib.parse import quote
+import uiautomation as auto
 
 # ===========================
 # 全局状态存储
@@ -229,6 +230,54 @@ class SearchService:
             "artists": song_data.get('ar') or song_data.get('artists', []),
             "album": song_data.get('al') or song_data.get('album', {})
         }
+    
+class PlayModeService:
+    def __init__(self):
+        self.window = None
+        self.control_bar = None
+        self.mode_map = {
+            "loop": "list",
+            "singleloop": "single",
+            "shuffle": "random",
+            "order": "order"
+        }
+        self.current_mode = "list"
+
+    def _get_handles(self):
+        """重新连接网易云窗口并定位控制栏锚点"""
+        try:
+            self.window = auto.WindowControl(searchDepth=1, ClassName="OrpheusBrowserHost")
+            if not self.window.Exists(0): return False
+            for ui_name in self.mode_map.keys():
+                target_btn = self.window.ButtonControl(searchDepth=15, Name=ui_name)
+                if target_btn.Exists(0.1):
+                    self.control_bar = target_btn.GetParentControl()
+                    return True
+        except: pass
+        return False
+
+    def get_mode(self):
+        """获取当前模式，包含自动重连逻辑"""
+        try:
+            if not self.window or not self.window.Exists(0):
+                self._get_handles()
+                return self.current_mode
+
+            found_key = None
+            if self.control_bar and self.control_bar.Exists(0):
+                for child in self.control_bar.GetChildren():
+                    if child.Name in self.mode_map:
+                        found_key = child.Name
+                        break
+            
+            if not found_key: # 缓存失效重试
+                if self._get_handles(): return self.get_mode()
+            
+            if found_key: self.current_mode = self.mode_map[found_key]
+        except Exception: # 捕获 UI 重绘导致的句柄失效
+            self.window = None
+            self.control_bar = None
+        return self.current_mode
 
 # ===========================
 # 1. 数据库服务
@@ -460,6 +509,52 @@ class NeteaseV3Service:
         except Exception as e:
             print(f"[PlayingList Error] 读取失败: {e}")
             return []
+        
+    def get_playback_neighbors(self, current_id, mode):
+        """根据当前模式和 playingList 文件预测上下曲"""
+        raw_list = self.get_raw_playing_list()
+        if not raw_list or not current_id: return {}, {}
+
+        try:
+            # 1. 处理单曲循环
+            if mode == "single":
+                curr_item = next((item for item in raw_list if str(item.get('id')) == str(current_id)), None)
+                if curr_item:
+                    song = self._format_neighbor(curr_item)
+                    return song, song
+
+            # 2. 确定排序逻辑：随机模式用 randomOrder，其余用 displayOrder
+            sort_key = 'randomOrder' if mode == 'random' else 'displayOrder'
+            sorted_list = sorted(raw_list, key=lambda x: x.get(sort_key, 0))
+
+            # 3. 定位当前歌曲索引
+            idx = -1
+            for i, item in enumerate(sorted_list):
+                if str(item.get('id')) == str(current_id):
+                    idx = i
+                    break
+            
+            if idx == -1: return {}, {}
+
+            # 4. 计算循环索引
+            l = len(sorted_list)
+            prev_s = self._format_neighbor(sorted_list[(idx - 1) % l])
+            next_s = self._format_neighbor(sorted_list[(idx + 1) % l])
+            return prev_s, next_s
+        except:
+            return {}, {}
+
+    def _format_neighbor(self, item):
+        """内部辅助：格式化邻居歌曲信息"""
+        t = item.get('track', {})
+        ar = t.get('artists') or t.get('ar', [])
+        al = t.get('album') or t.get('al', {})
+        return {
+            "id": t.get('id'),
+            "name": t.get('name'),
+            "artist": " / ".join([a.get('name') for a in ar]),
+            "cover": al.get('picUrl', "")
+        }
 
 # ===========================
 # 2. 歌词服务
@@ -579,211 +674,227 @@ def format_t(s):
     return f"{int(s//60):02}:{int(s%60):02}"
 
 def monitor_loop(v3, lrc_svc):
-    # === 内存指针配置 ===
-    PTR_STATIC_OFFSET = 0x01DDE250
-    PTR_OFFSETS = [0x10, 0, 0x10, 0x68, 0]
-    
-    OFF_CURR = 0x1D7E8F8
-    OFF_TOTAL = 0x1DDEF58
-    
-    pm = None
-    base = None
-    
-    last_ct = -1.0
-    last_tt = 0.0
-    
-    # 兼容旧逻辑变量
-    last_switch_time = 0      
-    is_waiting_stable = False 
-    current_song_title_cache = ""
-    last_title_check_time = 0
-    
-    # 内存ID记录
-    last_memory_id = None
+    with auto.UIAutomationInitializerInThread():
+        # === 内存指针配置 ===
+        PTR_STATIC_OFFSET = 0x01DDE250
+        PTR_OFFSETS = [0x10, 0, 0x10, 0x68, 0]
+        
+        OFF_CURR = 0x1D7E8F8
+        OFF_TOTAL = 0x1DDEF58
 
-    print("启动后台监控线程...")
+        mode_svc = PlayModeService()
+        
+        pm = None
+        base = None
+        
+        last_ct = -1.0
+        last_tt = 0.0
+        
+        # 兼容旧逻辑变量
+        last_switch_time = 0      
+        is_waiting_stable = False 
+        current_song_title_cache = ""
+        last_title_check_time = 0
+        
+        # 内存ID记录
+        last_memory_id = None
 
-    while True:
-        try:
-            # 1. 进程连接
-            if pm is None:
-                try:
-                    pm = pymem.Pymem("cloudmusic.exe")
-                    mod = pymem.process.module_from_name(pm.process_handle, "cloudmusic.dll")
-                    base = mod.lpBaseOfDll
-                    print("已连接到网易云音乐进程")
-                    with state_lock: API_STATE['process_active'] = True
-                except:
-                    with state_lock: 
-                        API_STATE['process_active'] = False
-                        API_STATE['playing'] = False
-                    time.sleep(2)
-                    continue
+        print("启动后台监控线程...")
 
-            # 2. 读取基础时间
+        while True:
             try:
-                ct = pm.read_double(base + OFF_CURR)
-                tt = pm.read_double(base + OFF_TOTAL)
-            except:
-                pm = None
-                continue
+                # 1. 进程连接
+                if pm is None:
+                    try:
+                        pm = pymem.Pymem("cloudmusic.exe")
+                        mod = pymem.process.module_from_name(pm.process_handle, "cloudmusic.dll")
+                        base = mod.lpBaseOfDll
+                        print("已连接到网易云音乐进程")
+                        with state_lock: API_STATE['process_active'] = True
+                    except:
+                        with state_lock: 
+                            API_STATE['process_active'] = False
+                            API_STATE['playing'] = False
+                        time.sleep(2)
+                        continue
 
-            is_moving = (ct != last_ct)
-            last_ct = ct
-            
-            # ==========================================
-            # 4. 【核心优先】尝试直接读取内存 ID
-            # ==========================================
-            memory_id = MemoryUtils.read_pointer_chain_string(pm, base, PTR_STATIC_OFFSET, PTR_OFFSETS)
-            
-            current_track_full = None
-            
-            # === 分支 A: 内存读取成功 (高精度模式) ===
-            if memory_id:
-                # 重置旧逻辑的状态，防止混合干扰
-                is_waiting_stable = False
-
-                # 只有当 ID 发生变化时，才去执行昂贵的查询操作
-                if memory_id != last_memory_id:
-                    print(f"\n[内存] 检测到 ID 变更: {last_memory_id} -> {memory_id}")
-                    last_memory_id = memory_id
-                    
-                    # 立即清空旧歌词
-                    lrc_svc.clear()
-                    with state_lock:
-                         API_STATE['lyrics']['all_lyrics'] = []
-                         API_STATE['lyrics']['current_line'] = "Loading..."
-                    
-                    # --- 策略：内存 -> 数据库 -> API ---
-                    
-                    # 1. 先查本地数据库 (最安全，0 网络请求)
-                    print(f"[查询] 正在检索本地数据库 (ID={memory_id})...")
-                    db_track = v3.search_db_for_id(memory_id)
-                    
-                    if db_track:
-                        current_track_full = db_track
-                        print(f" -> [命中] 本地数据库: {db_track['name']}")
-                    else:
-                        # 2. 数据库没有，才调用 API (最后手段)
-                        print(f" -> [未命中] 本地无缓存，调用 API...")
-                        api_track = v3.get_song_detail_by_id(memory_id)
-                        
-                        if api_track:
-                            current_track_full = api_track
-                            print(f" -> [成功] API 获取: {api_track['name']}")
-                        else:
-                            print(f" -> [失败] 无法获取歌曲详情")
-                
-                # 如果 ID 没变，但全局为空 (刚启动时)，补一次查询
-                elif API_STATE['basic_info']['id'] != memory_id:
-                     db_track = v3.search_db_for_id(memory_id)
-                     if db_track:
-                         current_track_full = db_track
-                     else:
-                         current_track_full = v3.get_song_detail_by_id(memory_id)
-
-            # === 分支 B: 内存读取失败 (降级模式) ===
-            else:
-                # 如果 tt 无效，直接跳过
-                if tt < 1.0:
-                    time.sleep(0.1)
+                # 2. 读取基础时间
+                try:
+                    ct = pm.read_double(base + OFF_CURR)
+                    tt = pm.read_double(base + OFF_TOTAL)
+                except:
+                    pm = None
                     continue
-                
-                is_switching = False
-                
-                # Trigger 1: 时长突变
-                if abs(tt - last_tt) > 1.0:
-                    is_switching = True
-                    print(f"[触发] 时长突变: {last_tt:.1f} -> {tt:.1f}")
-                # Trigger 2: 进度回跳
-                elif last_ct > 2.0 and ct < 1.0:
-                    pass 
-                # Trigger 3: 主动标题轮询
-                if time.time() - last_title_check_time > 0.5:
-                    last_title_check_time = time.time()
-                    win_title = WindowUtils.get_netease_window_title()
-                    if win_title:
-                        clean_win_title = win_title.replace(" - 网易云音乐", "").strip()
-                        if current_song_title_cache and clean_win_title != current_song_title_cache and not is_waiting_stable:
-                            if " - " in clean_win_title:
-                                is_switching = True
-                                print(f"[触发] 标题变更: '{current_song_title_cache}' -> '{clean_win_title}'")
-                
-                if is_switching:
-                    last_tt = tt
-                    last_switch_time = time.time()
-                    is_waiting_stable = True
-                    lrc_svc.clear() 
-                    with state_lock:
-                        API_STATE['lyrics']['all_lyrics'] = []
-                        API_STATE['lyrics']['current_line'] = "Loading..."
 
-                if is_waiting_stable:
-                    time_diff = time.time() - last_switch_time
-                    if time_diff > 1.2:
-                        print(f"[防抖] 状态已稳定，同步新歌数据...")
-                        is_waiting_stable = False 
+                is_moving = (ct != last_ct)
+                last_ct = ct
+                
+                # ==========================================
+                # 4. 【核心优先】尝试直接读取内存 ID
+                # ==========================================
+                memory_id = MemoryUtils.read_pointer_chain_string(pm, base, PTR_STATIC_OFFSET, PTR_OFFSETS)
+                
+                current_track_full = None
+                
+                # === 分支 A: 内存读取成功 (高精度模式) ===
+                if memory_id:
+                    # 重置旧逻辑的状态，防止混合干扰
+                    is_waiting_stable = False
+
+                    # 只有当 ID 发生变化时，才去执行昂贵的查询操作
+                    if memory_id != last_memory_id:
+                        print(f"\n[内存] 检测到 ID 变更: {last_memory_id} -> {memory_id}")
+                        last_memory_id = memory_id
                         
-                        # 降级模式：尝试获取数据
-                        # 1. 尝试读最新的库
-                        # 2. 尝试搜标题
-                        track = v3.get_track_hybrid(tt)
-                        if track:
-                            current_track_full = track
-                            print(f" -> [降级成功] {track['name']}")
+                        # 立即清空旧歌词
+                        lrc_svc.clear()
+                        with state_lock:
+                            API_STATE['lyrics']['all_lyrics'] = []
+                            API_STATE['lyrics']['current_line'] = "Loading..."
+                        
+                        # --- 策略：内存 -> 数据库 -> API ---
+                        
+                        # 1. 先查本地数据库 (最安全，0 网络请求)
+                        print(f"[查询] 正在检索本地数据库 (ID={memory_id})...")
+                        db_track = v3.search_db_for_id(memory_id)
+                        
+                        if db_track:
+                            current_track_full = db_track
+                            print(f" -> [命中] 本地数据库: {db_track['name']}")
                         else:
-                            print(" -> [降级失败] 无法同步数据")
+                            # 2. 数据库没有，才调用 API (最后手段)
+                            print(f" -> [未命中] 本地无缓存，调用 API...")
+                            api_track = v3.get_song_detail_by_id(memory_id)
+                            
+                            if api_track:
+                                current_track_full = api_track
+                                print(f" -> [成功] API 获取: {api_track['name']}")
+                            else:
+                                print(f" -> [失败] 无法获取歌曲详情")
+                    
+                    # 如果 ID 没变，但全局为空 (刚启动时)，补一次查询
+                    elif API_STATE['basic_info']['id'] != memory_id:
+                        db_track = v3.search_db_for_id(memory_id)
+                        if db_track:
+                            current_track_full = db_track
+                        else:
+                            current_track_full = v3.get_song_detail_by_id(memory_id)
 
-            # ==========================================
-            # 5. 更新全局状态
-            # ==========================================
-            if current_track_full:
-                song_name = current_track_full.get('name')
-                artists = current_track_full.get('artists') or current_track_full.get('ar', [])
-                all_artist_names = [a.get('name') for a in artists]
-                artist_display_str = " / ".join(all_artist_names) if all_artist_names else "未知歌手"
-                
-                # 更新缓存标题，防止降级逻辑死循环
-                current_song_title_cache = f"{song_name} - {'/'.join(all_artist_names)}"
-                
-                song_id = current_track_full.get("id")
-                
-                # 加载歌词
-                lrc_svc.load_lyrics(song_id)
-                
-                al_data = current_track_full.get("album") or current_track_full.get("al", {})
-                cover_url = al_data.get("picUrl", "")
+                # === 分支 B: 内存读取失败 (降级模式) ===
+                else:
+                    # 如果 tt 无效，直接跳过
+                    if tt < 1.0:
+                        time.sleep(0.1)
+                        continue
+                    
+                    is_switching = False
+                    
+                    # Trigger 1: 时长突变
+                    if abs(tt - last_tt) > 1.0:
+                        is_switching = True
+                        print(f"[触发] 时长突变: {last_tt:.1f} -> {tt:.1f}")
+                    # Trigger 2: 进度回跳
+                    elif last_ct > 2.0 and ct < 1.0:
+                        pass 
+                    # Trigger 3: 主动标题轮询
+                    if time.time() - last_title_check_time > 0.5:
+                        last_title_check_time = time.time()
+                        win_title = WindowUtils.get_netease_window_title()
+                        if win_title:
+                            clean_win_title = win_title.replace(" - 网易云音乐", "").strip()
+                            if current_song_title_cache and clean_win_title != current_song_title_cache and not is_waiting_stable:
+                                if " - " in clean_win_title:
+                                    is_switching = True
+                                    print(f"[触发] 标题变更: '{current_song_title_cache}' -> '{clean_win_title}'")
+                    
+                    if is_switching:
+                        last_tt = tt
+                        last_switch_time = time.time()
+                        is_waiting_stable = True
+                        lrc_svc.clear() 
+                        with state_lock:
+                            API_STATE['lyrics']['all_lyrics'] = []
+                            API_STATE['lyrics']['current_line'] = "Loading..."
 
+                    if is_waiting_stable:
+                        time_diff = time.time() - last_switch_time
+                        if time_diff > 1.2:
+                            print(f"[防抖] 状态已稳定，同步新歌数据...")
+                            is_waiting_stable = False 
+                            
+                            # 降级模式：尝试获取数据
+                            # 1. 尝试读最新的库
+                            # 2. 尝试搜标题
+                            track = v3.get_track_hybrid(tt)
+                            if track:
+                                current_track_full = track
+                                print(f" -> [降级成功] {track['name']}")
+                            else:
+                                print(" -> [降级失败] 无法同步数据")
+
+                # ==========================================
+                # 5. 更新全局状态
+                # ==========================================
+                if current_track_full:
+                    song_name = current_track_full.get('name')
+                    artists = current_track_full.get('artists') or current_track_full.get('ar', [])
+                    all_artist_names = [a.get('name') for a in artists]
+                    artist_display_str = " / ".join(all_artist_names) if all_artist_names else "未知歌手"
+
+                    # 获取当前模式
+                    current_mode = mode_svc.get_mode()
+
+                    # 计算邻居歌曲
+                    curr_id = API_STATE['basic_info']['id']
+                    prev_track, next_track = {}, {}
+                    if curr_id:
+                    # 只有当 ID 存在且有效时才计算
+                        prev_track, next_track = v3.get_playback_neighbors(curr_id, current_mode)
+                    
+                    # 更新缓存标题，防止降级逻辑死循环
+                    current_song_title_cache = f"{song_name} - {'/'.join(all_artist_names)}"
+                    
+                    song_id = current_track_full.get("id")
+                    
+                    # 加载歌词
+                    lrc_svc.load_lyrics(song_id)
+                    
+                    al_data = current_track_full.get("album") or current_track_full.get("al", {})
+                    cover_url = al_data.get("picUrl", "")
+
+                    with state_lock:
+                        API_STATE['basic_info'] = {
+                            "id": song_id,
+                            "name": song_name,
+                            "artist": artist_display_str,
+                            "album": al_data.get("name", ""),
+                            "cover_url": cover_url,
+                            "duration": current_track_full.get("duration", 0)
+                        }
+                        API_STATE['db_info'] = current_track_full
+
+                # 实时更新进度和歌词
+                cur_txt, cur_trans = lrc_svc.get_current_line(ct)
+                
                 with state_lock:
-                    API_STATE['basic_info'] = {
-                        "id": song_id,
-                        "name": song_name,
-                        "artist": artist_display_str,
-                        "album": al_data.get("name", ""),
-                        "cover_url": cover_url,
-                        "duration": current_track_full.get("duration", 0)
+                    API_STATE['playing'] = is_moving
+                    API_STATE['playback'] = {
+                        "current_sec": ct,
+                        "total_sec": tt,
+                        "percentage": (ct / tt * 100) if tt > 0 else 0,
+                        "formatted_current": format_t(ct),
+                        "formatted_total": format_t(tt),
+                        "play_mode": current_mode,
+                        "prev_song": prev_track,
+                        "next_song": next_track
                     }
-                    API_STATE['db_info'] = current_track_full
+                    API_STATE['lyrics']['current_line'] = cur_txt
+                    API_STATE['lyrics']['current_trans'] = cur_trans
+                time.sleep(0.1)
 
-            # 实时更新进度和歌词
-            cur_txt, cur_trans = lrc_svc.get_current_line(ct)
-            
-            with state_lock:
-                API_STATE['playing'] = is_moving
-                API_STATE['playback'] = {
-                    "current_sec": ct,
-                    "total_sec": tt,
-                    "percentage": (ct / tt * 100) if tt > 0 else 0,
-                    "formatted_current": format_t(ct),
-                    "formatted_total": format_t(tt)
-                }
-                API_STATE['lyrics']['current_line'] = cur_txt
-                API_STATE['lyrics']['current_trans'] = cur_trans
-            time.sleep(0.1)
-
-        except Exception as e:
-            print(f"Monitor Loop Error: {e}")
-            time.sleep(1)
+            except Exception as e:
+                print(f"Monitor Loop Error: {e}")
+                time.sleep(1)
 
 # ===========================
 # 4. Flask Web Server
