@@ -1,0 +1,1431 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer" />
+    <title>Netease Music Player</title>
+    <style>
+        :root {
+            --active-color: #ffffff;
+            --inactive-color: rgba(255, 255, 255, 0.45); 
+            --blur-intensity: 60px;
+            --gradient-feather: 20px; 
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: #000;
+            user-select: none;
+        }
+
+        /* === 双层背景系统（扫描线效果） === */
+        .bg-layer {
+            position: fixed;
+            top: -100px; left: -100px; right: -100px; bottom: -100px;
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            filter: blur(var(--blur-intensity)) brightness(0.5);
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .bg-layer.active {
+            opacity: 1;
+        }
+
+        /* 从左到右扫描（上一首） - 覆盖transition，使用动画 */
+        .bg-layer.scan-left-to-right {
+            animation: scanlineLeftToRight 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            transition: none;
+        }
+
+        /* 从右到左扫描（下一首） - 覆盖transition，使用动画 */
+        .bg-layer.scan-right-to-left {
+            animation: scanlineRightToLeft 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+            transition: none;
+        }
+
+        @keyframes scanlineLeftToRight {
+            from {
+                opacity: 1;
+                clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+            }
+            to {
+                opacity: 1;
+                clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+            }
+        }
+
+        @keyframes scanlineRightToLeft {
+            from {
+                opacity: 1;
+                clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+            }
+            to {
+                opacity: 1;
+                clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+            }
+        }
+
+        #bg-layer-1 { z-index: 1; }
+        #bg-layer-2 { z-index: 1; }
+
+        .container {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            height: 100vh;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 40px;
+            box-sizing: border-box;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* === 左侧信息区 === */
+        .info-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            max-width: 450px;
+            padding-bottom: 20px; 
+        }
+
+        /* === 双层封面系统 === */
+        .album-art-container {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            margin-bottom: 25px;
+        }
+
+        .album-art {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 12px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            object-fit: cover;
+            background-color: rgba(255,255,255,0.1);
+            opacity: 0;
+            transform: scale(0.8);
+            transition: all 1s cubic-bezier(0.34, 1.56, 0.64, 1);
+            z-index: 1;
+        }
+
+        .album-art.active {
+            opacity: 1;
+            transform: scale(1);
+            z-index: 2;
+        }
+
+        /* 移除呼吸效果，只保留阴影 */
+        .album-art.playing {
+            box-shadow: 0 30px 60px rgba(0,0,0,0.6), 0 0 40px rgba(255,255,255,0.1);
+        }
+
+        /* 飞行动画 - 4个方向 */
+        .album-art.fly-from-next {
+            animation: flyFromNext 1s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        .album-art.fly-from-prev {
+            animation: flyFromPrev 1s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+
+        .album-art.fly-to-prev {
+            animation: flyToPrev 1s cubic-bezier(0.6, -0.28, 0.74, 0.05) forwards;
+        }
+
+        .album-art.fly-to-next {
+            animation: flyToNext 1s cubic-bezier(0.6, -0.28, 0.74, 0.05) forwards;
+        }
+
+        /* 从右下方的下一首封面飞入 */
+        @keyframes flyFromNext {
+            from {
+                opacity: 1;
+                transform: translate(66px, 380px) scale(0.156);
+            }
+            to {
+                opacity: 1;
+                transform: translate(0, 0) scale(1);
+            }
+        }
+
+        /* 从左下方的上一首封面飞入 */
+        @keyframes flyFromPrev {
+            from {
+                opacity: 1;
+                transform: translate(-66px, 380px) scale(0.156);
+            }
+            to {
+                opacity: 1;
+                transform: translate(0, 0) scale(1);
+            }
+        }
+
+        /* 飞出到左下方的上一首封面 */
+        @keyframes flyToPrev {
+            from {
+                opacity: 1;
+                transform: translate(0, 0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translate(-66px, 380px) scale(0.156);
+            }
+        }
+
+        /* 飞出到右下方的下一首封面 */
+        @keyframes flyToNext {
+            from {
+                opacity: 1;
+                transform: translate(0, 0) scale(1);
+            }
+            to {
+                opacity: 0;
+                transform: translate(66px, 380px) scale(0.156);
+            }
+        }
+
+        .text-group {
+            margin-bottom: 20px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        .song-title {
+            font-size: 28px;
+            font-weight: 800;
+            margin: 0 0 8px 0;
+            color: #fff;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            line-height: 1.2;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .song-title.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .artist-name {
+            font-size: 18px;
+            color: rgba(255,255,255,0.8);
+            margin: 0;
+            font-weight: 500;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.1s;
+        }
+
+        .artist-name.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* === 进度条区域 === */
+        .progress-container {
+            width: 80%;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s;
+        }
+
+        .progress-container.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .time-label {
+            font-size: 12px;
+            font-variant-numeric: tabular-nums;
+            color: rgba(255,255,255,0.6);
+            min-width: 35px;
+        }
+
+        .progress-bar-bg {
+            flex: 1;
+            height: 4px;
+            background: rgba(255,255,255,0.15);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+            cursor: pointer;
+            transition: height 0.2s ease;
+        }
+
+        .progress-bar-bg:hover {
+            height: 6px;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, rgba(255,255,255,0.8), rgba(255,255,255,1));
+            width: 0%;
+            border-radius: 2px;
+            position: relative;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        .progress-bar-fill::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 12px;
+            height: 12px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .progress-bar-bg:hover .progress-bar-fill::after {
+            opacity: 1;
+        }
+
+        /* === 底部控制区 === */
+        .sub-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 25px;
+            margin-top: 10px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s;
+        }
+
+        .sub-controls.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* 小封面容器（双层） */
+        .sub-cover-wrap {
+            position: relative;
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            opacity: 0.6;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+            cursor: pointer;
+        }
+
+        .sub-cover-wrap img {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .sub-cover-wrap img.active {
+            opacity: 1;
+        }
+        
+        .sub-cover-wrap::after {
+            content: attr(data-label);
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            background: rgba(0,0,0,0.6);
+            color: #fff;
+            font-size: 9px;
+            text-align: center;
+            padding: 2px 0;
+            backdrop-filter: blur(2px);
+            transition: all 0.3s;
+            z-index: 10;
+        }
+
+        .sub-cover-wrap:hover {
+            opacity: 1;
+            transform: translateY(-4px) scale(1.05);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+        }
+
+        .sub-cover-wrap:active {
+            transform: translateY(-2px) scale(1);
+        }
+
+        .mode-icon {
+            width: 32px;
+            height: 32px;
+            opacity: 0.7;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 50%;
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        .mode-icon:hover {
+            opacity: 1;
+            background: rgba(255,255,255,0.1);
+            transform: scale(1.15) rotate(15deg);
+        }
+
+        .mode-icon:active {
+            transform: scale(0.95);
+        }
+
+        .mode-icon svg {
+            fill: #fff;
+            width: 24px;
+            height: 24px;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+        }
+
+        /* === 歌词区域 === */
+        .lyrics-section {
+            flex: 1.5;
+            height: 70vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+            position: relative;
+            mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+            scrollbar-width: none;
+        }
+        .lyrics-section::-webkit-scrollbar { display: none; }
+
+        .lyrics-container { 
+            padding: 50vh 0; 
+            width: 100%;
+            opacity: 0;
+            transition: opacity 0.6s ease 0.4s;
+        }
+
+        .lyrics-container.show {
+            opacity: 1;
+        }
+
+        .lrc-line {
+            padding: 12px 20px;
+            margin-left: 20px;
+            border-radius: 8px;
+            text-align: left;
+            cursor: default;
+            transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transform: scale(0.95);
+            transform-origin: left center;
+            opacity: 0;
+            animation: fadeInLyric 0.5s ease forwards;
+        }
+
+        @keyframes fadeInLyric {
+            from {
+                opacity: 0;
+                transform: scale(0.95) translateX(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(0.95) translateX(0);
+            }
+        }
+
+        .yrc-word-box { 
+            display: inline-block; 
+            position: relative; 
+        }
+
+        .yrc-word-base { 
+            color: var(--inactive-color); 
+            white-space: pre-wrap; 
+        }
+
+        .yrc-word-mask {
+            position: absolute; 
+            top: 0; 
+            left: 0; 
+            color: var(--active-color); 
+            white-space: pre-wrap; 
+            width: 100%; 
+            opacity: 0;
+            --gradient-stop: var(--word-pct);
+            --gradient-end: calc(var(--word-pct) + var(--gradient-feather));
+            -webkit-mask-image: linear-gradient(to right, black 0%, black var(--gradient-stop), transparent var(--gradient-end));
+            mask-image: linear-gradient(to right, black 0%, black var(--gradient-stop), transparent var(--gradient-end));
+            will-change: mask-image, opacity; 
+            pointer-events: none;
+        }
+
+        .lrc-text { 
+            font-size: 26px; 
+            font-weight: 700; 
+            color: var(--inactive-color); 
+            line-height: 1.4; 
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .lrc-line .trans { 
+            display: block; 
+            font-size: 18px; 
+            font-weight: 400; 
+            margin-top: 6px; 
+            opacity: 0.7; 
+            color: var(--inactive-color); 
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .lrc-line .roma { 
+            display: block; 
+            font-size: 16px; 
+            font-weight: 400; 
+            margin-bottom: 4px; 
+            opacity: 0.6; 
+            color: var(--inactive-color); 
+            font-style: italic; 
+            transition: all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .lrc-line.active { 
+            transform: scale(1); 
+        }
+
+        .lrc-line.active .lrc-text { 
+            color: var(--active-color); 
+            font-size: 32px; 
+            text-shadow: 0 0 20px rgba(255,255,255,0.3);
+        }
+
+        .lrc-line.active .trans { 
+            color: rgba(255,255,255,0.9); 
+            opacity: 1; 
+        }
+
+        .lrc-line.active .roma { 
+            color: rgba(255,255,255,0.8); 
+            opacity: 1; 
+        }
+        
+        .yrc-line-content { 
+            font-size: 28px; 
+            font-weight: 700; 
+            line-height: 1.4; 
+            transition: font-size 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .lrc-line.active .yrc-line-content { 
+            font-size: 34px; 
+        }
+
+        /* === 加载动画 === */
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .loading-shimmer {
+            background: linear-gradient(90deg, 
+                rgba(255,255,255,0.05) 0%, 
+                rgba(255,255,255,0.15) 50%, 
+                rgba(255,255,255,0.05) 100%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        @media (max-width: 768px) {
+            .container { 
+                flex-direction: column; 
+                padding: 20px; 
+            }
+
+            .info-section { 
+                flex: 0 0 auto; 
+                margin-bottom: 20px; 
+                width: 100%; 
+                padding-bottom: 0;
+            }
+
+            .album-art-container { 
+                width: 200px; 
+                height: 200px; 
+                margin-bottom: 15px; 
+            }
+
+            .sub-controls { 
+                display: none; 
+            }
+
+            .progress-container { 
+                width: 100%; 
+                margin-bottom: 15px;
+            }
+
+            .song-title { 
+                font-size: 24px; 
+            }
+
+            .lyrics-section { 
+                width: 100%; 
+                height: 50vh; 
+            }
+
+            .lrc-line { 
+                text-align: center; 
+                margin-left: 0; 
+                transform-origin: center center; 
+            }
+
+            .yrc-line-content { 
+                font-size: 22px; 
+            }
+
+            .lrc-line.active .yrc-line-content { 
+                font-size: 26px; 
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 双层背景 -->
+    <div class="bg-layer" id="bg-layer-1"></div>
+    <div class="bg-layer" id="bg-layer-2"></div>
+
+    <div class="container">
+        <!-- 左侧信息区 -->
+        <div class="info-section">
+            <!-- 双层封面 -->
+            <div class="album-art-container">
+                <img src="" alt="Album Art" class="album-art" id="cover-img-1">
+                <img src="" alt="Album Art" class="album-art" id="cover-img-2">
+            </div>
+            
+            <div class="text-group">
+                <h1 class="song-title" id="title">Waiting...</h1>
+                <h2 class="artist-name" id="artist">请播放网易云音乐</h2>
+            </div>
+
+            <!-- 进度条 -->
+            <div class="progress-container">
+                <span class="time-label" id="curr-time-text">00:00</span>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="progress-fill"></div>
+                </div>
+                <span class="time-label" id="total-time-text">00:00</span>
+            </div>
+
+            <!-- 上一首/模式/下一首 -->
+            <div class="sub-controls">
+                <div class="sub-cover-wrap" id="prev-wrap" data-label="PREV">
+                    <img class="prev-img" src="">
+                    <img class="prev-img" src="">
+                </div>
+                
+                <div class="mode-icon" id="mode-icon-container">
+                    <!-- SVG图标将通过JS插入 -->
+                </div>
+
+                <div class="sub-cover-wrap" id="next-wrap" data-label="NEXT">
+                    <img class="next-img" src="">
+                    <img class="next-img" src="">
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧歌词区 -->
+        <div class="lyrics-section" id="lyrics-viewport">
+            <div class="lyrics-container" id="lyrics-box"></div>
+        </div>
+    </div>
+
+    <script>
+        // 替换为你的 Python 服务 IP
+        const BASE_URL = "http://192.168.31.22:18726";
+        const DEFAULT_COVER = "https://p2.music.126.net/tGHU62DTbzHOs014gv0zkA==/18806046882229308.jpg";
+
+        // DOM 元素
+        const elBg1 = document.getElementById('bg-layer-1');
+        const elBg2 = document.getElementById('bg-layer-2');
+        const elCover1 = document.getElementById('cover-img-1');
+        const elCover2 = document.getElementById('cover-img-2');
+        const elTitle = document.getElementById('title');
+        const elArtist = document.getElementById('artist');
+        const elLyricsBox = document.getElementById('lyrics-box');
+        const elViewport = document.getElementById('lyrics-viewport');
+        
+        const elProgFill = document.getElementById('progress-fill');
+        const elCurrTime = document.getElementById('curr-time-text');
+        const elTotalTime = document.getElementById('total-time-text');
+        const elModeContainer = document.getElementById('mode-icon-container');
+        const elProgressContainer = document.querySelector('.progress-container');
+        const elSubControls = document.querySelector('.sub-controls');
+
+        // 小封面元素
+        const elPrevImgs = document.querySelectorAll('.prev-img');
+        const elNextImgs = document.querySelectorAll('.next-img');
+
+        // 状态变量
+        let currentSongId = 0;
+        let previousNextSongId = 0; // 记录上次的下一首歌曲ID
+        let previousPrevSongId = 0; // 记录上次的上一首歌曲ID
+        let lyricsData = []; 
+        let lastActiveIndex = -1;
+        let isFetchingLyrics = false;
+
+        let lastServerTime = 0; 
+        let lastLocalTick = 0;  
+        let isPlaying = false;  
+        let lastRenderedTime = 0; 
+        let currentTotalDuration = 0;
+
+        // 双层系统状态
+        let activeCoverLayer = 1; // 1 或 2
+        let activeBgLayer = 1;
+
+        // 图片预加载缓存
+        const imageCache = new Map();
+
+        // 初始化
+        preloadAndSetImage(elCover1, DEFAULT_COVER, true);
+        preloadAndSetImage(elBg1, DEFAULT_COVER, false);
+        elBg1.classList.add('active'); // 初始背景不需要扫描动画
+        elBg1.style.zIndex = '2'; // 初始激活层设为较高的z-index
+        elCover1.classList.add('active');
+
+        // 仅预加载图片到缓存，不设置到元素
+        function preloadImageToCache(url) {
+            if (!url || imageCache.has(url)) {
+                return Promise.resolve();
+            }
+
+            return new Promise((resolve) => {
+                const img = new Image();
+                img.onload = () => {
+                    imageCache.set(url, true);
+                    console.log(`[预加载] 成功缓存图片: ${url.substring(url.lastIndexOf('/') + 1)}`);
+                    resolve();
+                };
+                img.onerror = () => {
+                    resolve(); // 即使失败也resolve，避免阻塞
+                };
+                img.src = url;
+            });
+        }
+
+        // 图片预加载函数
+        function preloadAndSetImage(element, url, isCover) {
+            return new Promise((resolve, reject) => {
+                if (!url) {
+                    reject('No URL provided');
+                    return;
+                }
+
+                // 检查缓存
+                if (imageCache.has(url)) {
+                    console.log(`[预加载] 缓存命中: ${url.substring(url.lastIndexOf('/') + 1)}`);
+                    if (isCover) {
+                        element.src = url;
+                    } else {
+                        element.style.backgroundImage = `url("${url}")`;
+                    }
+                    resolve();
+                    return;
+                }
+
+                // 预加载图片
+                const img = new Image();
+                img.onload = () => {
+                    imageCache.set(url, true);
+                    if (isCover) {
+                        element.src = url;
+                    } else {
+                        element.style.backgroundImage = `url("${url}")`;
+                    }
+                    resolve();
+                };
+                img.onerror = () => {
+                    console.warn(`Failed to load image: ${url}`);
+                    reject();
+                };
+                img.src = url;
+            });
+        }
+
+        // 切换封面（飞行动画）
+        // direction: 'next' (从右下飞入，到左下飞出) 或 'prev' (从左下飞入，到右下飞出)
+        function switchCoverWithFly(newUrl, direction = 'next') {
+            const currentLayer = activeCoverLayer;
+            const nextLayer = currentLayer === 1 ? 2 : 1;
+            const currentEl = currentLayer === 1 ? elCover1 : elCover2;
+            const nextEl = nextLayer === 1 ? elCover1 : elCover2;
+
+            // 立即启动动画，不等待图片加载
+            // 移除所有动画类
+            currentEl.classList.remove('fly-from-next', 'fly-from-prev', 'fly-to-prev', 'fly-to-next');
+            nextEl.classList.remove('fly-from-next', 'fly-from-prev', 'fly-to-prev', 'fly-to-next');
+
+            // 强制重排
+            void nextEl.offsetWidth;
+            void currentEl.offsetWidth;
+
+            // 根据方向应用动画
+            if (direction === 'prev') {
+                // 切上一首：新封面从左下飞入，旧封面飞到右下
+                currentEl.classList.add('fly-to-next');
+                nextEl.classList.add('fly-from-prev', 'active');
+            } else {
+                // 切下一首：新封面从右下飞入，旧封面飞到左下
+                currentEl.classList.add('fly-to-prev');
+                nextEl.classList.add('fly-from-next', 'active');
+            }
+
+            // 更新播放状态
+            if (isPlaying) {
+                nextEl.classList.add('playing');
+            }
+
+            // 【优化】先立即尝试设置图片，利用浏览器HTTP缓存（小封面已加载过的图片会很快显示）
+            // 然后异步预加载验证，确保图片完全加载
+            nextEl.src = newUrl;
+            
+            preloadAndSetImage(nextEl, newUrl, true).catch(e => {
+                console.error('Cover load failed', e);
+                // 使用占位图
+                nextEl.src = DEFAULT_COVER;
+            });
+
+            // 清理旧层
+            setTimeout(() => {
+                currentEl.classList.remove('active', 'playing', 'fly-to-prev', 'fly-to-next');
+                activeCoverLayer = nextLayer;
+            }, 1000);
+        }
+
+        // 切换背景（扫描线效果）
+        // direction: 'next' (从右到左) 或 'prev' (从左到右)
+        function switchBackgroundScanline(newUrl, direction = 'next') {
+            const currentLayer = activeBgLayer;
+            const nextLayer = currentLayer === 1 ? 2 : 1;
+            const currentEl = currentLayer === 1 ? elBg1 : elBg2;
+            const nextEl = nextLayer === 1 ? elBg1 : elBg2;
+
+            // 立即启动动画，不等待图片加载
+            // 只移除新背景层的所有动画类（清理可能的残留状态）
+            nextEl.classList.remove('active', 'scan-left-to-right', 'scan-right-to-left');
+            
+            // 动态调整z-index，确保新背景在旧背景上方
+            currentEl.style.zIndex = '1';
+            nextEl.style.zIndex = '2';
+            
+            // 强制重排，确保动画可以重新触发
+            void nextEl.offsetWidth;
+
+            // 根据方向选择扫描动画类
+            const scanClass = direction === 'prev' ? 'scan-left-to-right' : 'scan-right-to-left';
+            
+            // 添加active和对应的扫描动画（新背景会因为z-index覆盖在旧背景上）
+            nextEl.classList.add('active', scanClass);
+            
+            // 【优化】先立即尝试设置背景，利用浏览器HTTP缓存（小封面已加载过的图片会很快显示）
+            // 然后异步预加载验证，确保图片完全加载
+            nextEl.style.backgroundImage = `url("${newUrl}")`;
+            
+            preloadAndSetImage(nextEl, newUrl, false).catch(e => {
+                console.error('Background load failed', e);
+                // 使用占位图
+                nextEl.style.backgroundImage = `url("${DEFAULT_COVER}")`;
+            });
+            
+            // 等待扫描动画完成后，再移除旧背景
+            setTimeout(() => {
+                currentEl.classList.remove('active', 'scan-left-to-right', 'scan-right-to-left');
+                activeBgLayer = nextLayer;
+            }, 1200);
+        }
+
+        // 存储清理定时器的 Map，key 是图片容器的 ID 或 DOM 引用
+        const fadeTimers = new Map();
+
+        // 修复后的小封面更新函数
+        function updateSmallCover(imgs, newUrl) {
+            // 1. 如果没有 URL，清空状态
+            if (!newUrl) {
+                imgs.forEach(img => img.classList.remove('active'));
+                return;
+            }
+
+            // 2. 找到当前激活的图层（如果没有，默认第0层）
+            let activeIndex = -1;
+            for (let i = 0; i < imgs.length; i++) {
+                if (imgs[i].classList.contains('active')) {
+                    activeIndex = i;
+                    break;
+                }
+            }
+            // 如果还没初始化，假设第0层是激活层
+            if (activeIndex === -1) activeIndex = 0;
+
+            const currentEl = imgs[activeIndex];
+            
+            // === 去重检查 ===
+            if (currentEl.src.includes(newUrl) && currentEl.classList.contains('active')) {
+                return; 
+            }
+
+            // 3. 确定下一层
+            const nextIndex = activeIndex === 0 ? 1 : 0;
+            const nextEl = imgs[nextIndex];
+
+            // === 清理上一次的定时器 ===
+            const container = nextEl.parentElement;
+            if (fadeTimers.has(container)) {
+                clearTimeout(fadeTimers.get(container));
+                fadeTimers.delete(container);
+            }
+
+            // 4. 立即快速预加载并显示新图（不阻塞主线程）
+            preloadAndSetImage(nextEl, newUrl, true)
+                .then(() => {
+                    // 立即淡入新图
+                    nextEl.classList.add('active');
+
+                    // 设置定时器：等新图完全淡入后(300ms)，再淡出旧图
+                    const timerId = setTimeout(() => {
+                        // 防止快速切换时把刚显示的图给删了
+                        if (currentEl !== nextEl) {
+                            currentEl.classList.remove('active');
+                        }
+                        fadeTimers.delete(container);
+                    }, 300); // 缩短到300ms，让过渡更快更流畅
+
+                    fadeTimers.set(container, timerId);
+                })
+                .catch((e) => {
+                    console.warn('Small cover load failed:', e);
+                    // 加载失败也试图切换显示，保持UI反应
+                    nextEl.classList.add('active');
+                    const timerId = setTimeout(() => {
+                        if (currentEl !== nextEl) {
+                            currentEl.classList.remove('active');
+                        }
+                        fadeTimers.delete(container);
+                    }, 300);
+                    fadeTimers.set(container, timerId);
+                });
+        }
+
+        async function fetchState() {
+            try {
+                const response = await fetch(`${BASE_URL}/info?t=${Date.now()}`);
+                const data = await response.json();
+                if(data && data.basic_info) {
+                    updatePlaybackUI(data);
+                }
+            } catch (e) {}
+        }
+
+        function updatePlaybackUI(data) {
+            const info = data.basic_info;
+            const playback = data.playback;
+
+            // 1. 进度同步逻辑
+            if (playback && playback.current_sec !== undefined) {
+                if (!data.playing) {
+                    lastRenderedTime = playback.current_sec;
+                }
+                if (Math.abs(playback.current_sec - lastRenderedTime) > 0.5) {
+                    lastRenderedTime = playback.current_sec; 
+                }
+
+                lastServerTime = playback.current_sec;
+                currentTotalDuration = playback.total_sec || info.duration / 1000 || 0;
+                lastLocalTick = Date.now();
+                isPlaying = data.playing;
+
+                elTotalTime.innerText = playback.formatted_total || formatTime(currentTotalDuration);
+                
+                if (playback.play_mode) {
+                    elModeContainer.innerHTML = getModeIcon(playback.play_mode);
+                }
+            }
+
+            // 2. 切歌逻辑（优先处理，带飞行动画）
+            if (info.id !== 0) {
+                if (info.id !== currentSongId) {
+                    console.log(`[Frontend] 切歌: ${info.name}`);
+                    console.log(`[Frontend] 当前歌曲ID: ${currentSongId}, 新歌曲ID: ${info.id}`);
+                    console.log(`[Frontend] 之前的上一首ID: ${previousPrevSongId}, 之前的下一首ID: ${previousNextSongId}`);
+                    
+                    // 检测切歌方向
+                    let direction = 'next'; // 默认假设是下一首
+                    let isDirectionDetected = false; // 是否确实检测到了方向（而不是猜测的）
+                    
+                    if (previousPrevSongId !== 0 && info.id === previousPrevSongId) {
+                        direction = 'prev'; // 切到了上一首
+                        isDirectionDetected = true;
+                        console.log('[Frontend] ✅ 检测到切换到上一首 - 使用从左到右扫描，从左下飞入');
+                    } else if (previousNextSongId !== 0 && info.id === previousNextSongId) {
+                        direction = 'next'; // 切到了下一首
+                        isDirectionDetected = true;
+                        console.log('[Frontend] ✅ 检测到切换到下一首 - 使用从右到左扫描，从右下飞入');
+                    } else {
+                        console.log('[Frontend] ⚠️ 无法确定方向（首次播放或随机播放），使用默认（下一首）');
+                        isDirectionDetected = false;
+                    }
+                    
+                    // 隐藏所有元素
+                    elTitle.classList.remove('show');
+                    elArtist.classList.remove('show');
+                    elProgressContainer.classList.remove('show');
+                    elSubControls.classList.remove('show');
+                    elLyricsBox.classList.remove('show');
+
+                    // 延迟后更新文字和显示
+                    setTimeout(() => {
+                        elTitle.innerText = info.name || "未知歌曲";
+                        elArtist.innerText = info.artist || "未知歌手";
+                        
+                        // 显示文字
+                        setTimeout(() => {
+                            elTitle.classList.add('show');
+                            elArtist.classList.add('show');
+                            elProgressContainer.classList.add('show');
+                            elSubControls.classList.add('show');
+                        }, 500);
+                    }, 300);
+
+                    let coverUrl = info.cover_url || DEFAULT_COVER;
+                    
+                    // 【优化】只有在确实检测到了方向时，才从已加载的小封面复用URL
+                    // 如果方向无法确定（手动切歌/随机播放），则使用服务器返回的URL以确保正确
+                    if (isDirectionDetected) {
+                        try {
+                            if (direction === 'prev') {
+                                // 注意：querySelectorAll返回的NodeList需要转换为数组才能使用find
+                                const img = Array.from(elPrevImgs).find(e => e.classList.contains('active'));
+                                if (img && img.src) {
+                                    coverUrl = img.src;
+                                    console.log('[Frontend] 📷 从已加载的小封面获取上一首图片 - 避免重复加载');
+                                }
+                            } else if (direction === 'next') {
+                                // 注意：querySelectorAll返回的NodeList需要转换为数组才能使用find
+                                const img = Array.from(elNextImgs).find(e => e.classList.contains('active'));
+                                if (img && img.src) {
+                                    coverUrl = img.src;
+                                    console.log('[Frontend] 📷 从已加载的小封面获取下一首图片 - 避免重复加载');
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('[Frontend] 获取小封面失败，使用服务器URL', e);
+                        }
+                    } else {
+                        console.log('[Frontend] 🎯 方向未确定，使用服务器返回的URL: ' + coverUrl);
+                    }
+                    
+                    // 重要：先更新currentSongId，即使后续操作失败也不会无限循环
+                    currentSongId = info.id;
+                    
+                    // 切换封面和背景（带方向感知的动画）- 不等待完成
+                    try {
+                        switchCoverWithFly(coverUrl, direction);
+                        switchBackgroundScanline(coverUrl, direction);
+                    } catch (e) {
+                        console.error('[Frontend] 动画切换失败', e);
+                    }
+
+                    lyricsData = [];
+                    lastActiveIndex = -1;
+                    elLyricsBox.innerHTML = '<div class="lrc-line loading-shimmer" style="text-align:center; opacity:0.5;">正在加载歌词...</div>';
+                    
+                    fetchLyrics();
+                } else if (lyricsData.length === 0 && !isFetchingLyrics) {
+                    fetchLyrics();
+                }
+            }
+
+            // 3. 更新邻居封面和预加载邻居图片（不阻塞主线程）
+            if (playback) {
+                if (playback.prev_song && playback.prev_song.cover) {
+                    updateSmallCover(elPrevImgs, playback.prev_song.cover);
+                    // 异步预加载上一首的大封面到缓存，不阻塞UI
+                    preloadImageToCache(playback.prev_song.cover);
+                } else {
+                    elPrevImgs.forEach(img => img.classList.remove('active'));
+                }
+
+                if (playback.next_song && playback.next_song.cover) {
+                    updateSmallCover(elNextImgs, playback.next_song.cover);
+                    // 异步预加载下一首的大封面到缓存，不阻塞UI
+                    preloadImageToCache(playback.next_song.cover);
+                } else {
+                    elNextImgs.forEach(img => img.classList.remove('active'));
+                }
+            }
+
+            // 4. 更新播放状态（移除呼吸动画）
+            const activeEl = activeCoverLayer === 1 ? elCover1 : elCover2;
+            if (data.playing) {
+                activeEl.classList.add('playing');
+            } else {
+                activeEl.classList.remove('playing');
+            }
+
+            // 5. 每次都更新上一首和下一首的ID，用于下次判断方向
+            // 这必须在切歌检测之后更新，确保下次能正确判断
+            // 注意：需要转换为数字类型，因为playback返回的是字符串
+            if (playback && playback.prev_song && playback.prev_song.id) {
+                const prevId = Number(playback.prev_song.id);
+                if (previousPrevSongId !== prevId) {
+                    console.log(`[Frontend] 更新上一首ID: ${previousPrevSongId} -> ${prevId}`);
+                    previousPrevSongId = prevId;
+                }
+            }
+            if (playback && playback.next_song && playback.next_song.id) {
+                const nextId = Number(playback.next_song.id);
+                if (previousNextSongId !== nextId) {
+                    console.log(`[Frontend] 更新下一首ID: ${previousNextSongId} -> ${nextId}`);
+                    previousNextSongId = nextId;
+                }
+            }
+        }
+
+        // 渲染循环 (60FPS)
+        function renderLoop() {
+            let preciseTime = lastServerTime;
+            if (isPlaying) {
+                const elapsed = (Date.now() - lastLocalTick) / 1000;
+                preciseTime += elapsed;
+            }
+
+            if (preciseTime < lastRenderedTime) {
+                preciseTime = lastRenderedTime; 
+            }
+            lastRenderedTime = preciseTime;
+
+            // 1. 更新进度条
+            if (currentTotalDuration > 0) {
+                const pct = Math.min(100, Math.max(0, (preciseTime / currentTotalDuration) * 100));
+                elProgFill.style.width = `${pct}%`;
+                elCurrTime.innerText = formatTime(preciseTime);
+            }
+
+            // 2. 同步歌词
+            syncLyrics(preciseTime);
+            
+            // 3. 更新逐字歌词渐变
+            updateWordGradients(preciseTime);
+
+            requestAnimationFrame(renderLoop);
+        }
+
+        // SVG 图标库
+        function getModeIcon(mode) {
+            const commonStyle = 'viewBox="0 0 24 24"';
+            if (mode === 'list' || mode === 'loop') return `<svg ${commonStyle}><path d="M17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4zm0-12v3h-12v6h-2v-8h14zm-4 4l4-4-4-4v3h-12v6h2v-4h10z"/></svg>`;
+            if (mode === 'single' || mode === 'singleloop') return `<svg ${commonStyle}><path d="M17 17H7v-3l-4 4 4 4v-3h12v-6h-2v4zm0-12v3h-12v6h-2v-8h14zm-4 4l4-4-4-4v3h-12v6h2v-4h10z"/><text x="10" y="16" font-size="8" fill="white" font-weight="bold">1</text></svg>`;
+            if (mode === 'random' || mode === 'shuffle') return `<svg ${commonStyle}><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>`;
+            return `<svg ${commonStyle}><path d="M3 15h18v-2H3v2zm0 4h18v-2H3v2zm0-8h18V9H3v2zm0-6v2h18V5H3z"/></svg>`;
+        }
+
+        function formatTime(seconds) {
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+        }
+
+        // 歌词处理函数
+        async function fetchLyrics() {
+            if (isFetchingLyrics) return;
+            isFetchingLyrics = true;
+            try {
+                const response = await fetch(`${BASE_URL}/lyrics?t=${Date.now()}`);
+                const data = await response.json();
+                if (data.id !== currentSongId) return;
+                if (data.hasLyric || data.hasYrc) {
+                    const parsed = parseAndMergeAll(data);
+                    renderLyrics(parsed);
+                } else { 
+                    renderLyrics([]); 
+                }
+            } catch (e) { 
+                console.error(e); 
+            } finally { 
+                isFetchingLyrics = false; 
+            }
+        }
+
+        function parseLrcLine(text) {
+            if (!text) return {};
+            const lines = text.split('\n');
+            const result = {};
+            // 修改了这里：将 (\d{2}) 改为 (\d+) 以匹配 [0:00.123] 这种一位数分钟的情况
+            const regex = /\[(\d+):(\d{2})(?:[\.:](\d+))?\](.*)/;
+            
+            lines.forEach(line => {
+                const match = line.match(regex);
+                if (match) {
+                    const min = parseInt(match[1]);
+                    const sec = parseInt(match[2]);
+                    let msVal = 0;
+                    const msStr = match[3] || "0";
+                    // 毫秒处理逻辑保持不变
+                    if (msStr.length === 2) msVal = parseInt(msStr) / 100;
+                    else if (msStr.length === 3) msVal = parseInt(msStr) / 1000;
+                    else if (msStr.length > 3) msVal = parseInt(msStr) / Math.pow(10, msStr.length); // 增加对更长毫秒数的兼容
+                    
+                    const content = match[4].trim();
+                    // 即使内容为空也可能需要保留占位，但在你的渲染逻辑里非空检查是OK的
+                    if (content) {
+                        const time = min * 60 + sec + msVal;
+                        // 注意：如果同一时间戳有多行（如0秒处的作词作曲），对象属性会被覆盖，只保留最后一行。
+                        // 如果想保留所有，需要额外逻辑，但通常歌词显示没问题。
+                        result[time.toFixed(3)] = content;
+                    }
+                }
+            });
+            return result;
+        }
+
+        function parseYrc(text) {
+            if (!text) return [];
+            const lines = text.split('\n');
+            const result = [];
+            const lineRegex = /^\[(\d+),(\d+)\](.*)/;
+            const wordRegex = /\((\d+),(\d+),(\d+)\)([^\(]+)/g;
+            lines.forEach(line => {
+                const match = line.match(lineRegex);
+                if (match) {
+                    const startTime = parseInt(match[1]) / 1000;
+                    const duration = parseInt(match[2]) / 1000;
+                    const contentRaw = match[3];
+                    const words = [];
+                    let wordMatch;
+                    let fullText = "";
+                    while ((wordMatch = wordRegex.exec(contentRaw)) !== null) {
+                        const wStart = parseInt(wordMatch[1]) / 1000;
+                        const wDur = parseInt(wordMatch[2]) / 1000;
+                        const wTxt = wordMatch[4];
+                        fullText += wTxt;
+                        words.push({
+                            time: wStart,
+                            duration: wDur,
+                            text: wTxt
+                        });
+                    }
+                    if (fullText) {
+                        result.push({
+                            time: startTime,
+                            duration: duration,
+                            text: fullText,
+                            words: words,
+                            isYrc: true
+                        });
+                    }
+                }
+            });
+            return result;
+        }
+
+        function parseAndMergeAll(packet) {
+            const lrcMap = parseLrcLine(packet.lrc);
+            const transMap = parseLrcLine(packet.tlyric);
+            const romaMap = parseLrcLine(packet.romalrc);
+            const lrcTimeline = Object.keys(lrcMap).sort((a, b) => parseFloat(a) - parseFloat(b));
+            const enrichedLrc = lrcTimeline.map(tStr => {
+                const t = parseFloat(tStr);
+                const text = lrcMap[tStr];
+                const findInMap = (map) => {
+                    for (const k in map) {
+                        if (Math.abs(parseFloat(k) - t) < 0.2) return map[k];
+                    }
+                    return "";
+                };
+                return {
+                    time: t,
+                    text: text,
+                    trans: findInMap(transMap),
+                    roma: findInMap(romaMap),
+                    normalizedText: text.replace(/[^\w\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g, '').toLowerCase()
+                };
+            });
+
+            if (!packet.hasYrc || !packet.yrc) {
+                return enrichedLrc.map(item => ({
+                    ...item,
+                    isYrc: false
+                }));
+            }
+
+            const yrcLines = parseYrc(packet.yrc);
+            return yrcLines.map(yLine => {
+                const yTextNorm = yLine.text.replace(/[^\w\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uff66-\uff9f]/g, '').toLowerCase();
+                let match = null;
+                if (yTextNorm.length > 0) {
+                    match = enrichedLrc.find(l => {
+                        if (!l.normalizedText) return false;
+                        return l.normalizedText === yTextNorm ||
+                            l.normalizedText.includes(yTextNorm) ||
+                            yTextNorm.includes(l.normalizedText);
+                    });
+                }
+                if (!match) {
+                    match = enrichedLrc.find(l => Math.abs(l.time - yLine.time) < 1.5);
+                }
+                return {
+                    ...yLine,
+                    isYrc: true,
+                    trans: match ? match.trans : "",
+                    roma: match ? match.roma : ""
+                };
+            });
+        }
+
+        function renderLyrics(lyrics) {
+            lyricsData = lyrics;
+            elLyricsBox.innerHTML = "";
+            lastActiveIndex = -1;
+
+            if (!lyrics || lyrics.length === 0) {
+                elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">🎵 纯音乐 / 暂无歌词</div>';
+                setTimeout(() => elLyricsBox.classList.add('show'), 100);
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            lyrics.forEach((line, index) => {
+                const div = document.createElement('div');
+                div.className = 'lrc-line';
+                div.id = `line-${index}`;
+                div.style.animationDelay = `${index * 0.03}s`;
+
+                let html = ``;
+                if (line.roma) html += `<span class="roma">${line.roma}</span>`;
+                
+                if (line.isYrc && line.words && line.words.length > 0) {
+                    html += `<div class="yrc-line-content">`;
+                    line.words.forEach((w) => {
+                        html += `<span class="yrc-word-box"><span class="yrc-word-base">${w.text}</span><span class="yrc-word-mask" data-start="${w.time}" data-dur="${w.duration}" style="--word-pct: 0%">${w.text}</span></span>`;
+                    });
+                    html += `</div>`;
+                } else {
+                    html += `<div class="lrc-text">${line.text}</div>`;
+                }
+                
+                if (line.trans) html += `<span class="trans">${line.trans}</span>`;
+                div.innerHTML = html;
+                fragment.appendChild(div);
+            });
+            
+            elLyricsBox.appendChild(fragment);
+            setTimeout(() => elLyricsBox.classList.add('show'), 100);
+        }
+
+        function syncLyrics(currentTime) {
+            if (!lyricsData.length) return;
+            let activeIndex = -1;
+            for (let i = lyricsData.length - 1; i >= 0; i--) {
+                if (currentTime >= lyricsData[i].time) {
+                    activeIndex = i;
+                    break;
+                }
+            }
+
+            if (activeIndex !== lastActiveIndex) {
+                const lines = elLyricsBox.children;
+                if (lastActiveIndex >= 0 && lastActiveIndex < lines.length) {
+                    const prevLine = lines[lastActiveIndex];
+                    prevLine.classList.remove('active');
+                    const masks = prevLine.querySelectorAll('.yrc-word-mask');
+                    masks.forEach(w => {
+                        w.style.setProperty('--word-pct', '0%');
+                        w.style.opacity = '0';
+                    });
+                }
+
+                if (activeIndex >= 0 && activeIndex < lines.length) {
+                    const activeLine = lines[activeIndex];
+                    activeLine.classList.add('active');
+                    const offset = activeLine.offsetTop - (elViewport.clientHeight / 2) + (activeLine.clientHeight / 2);
+                    elViewport.scrollTo({
+                        top: offset,
+                        behavior: 'smooth'
+                    });
+                    const masks = activeLine.querySelectorAll('.yrc-word-mask');
+                    masks.forEach(w => {
+                        w.style.setProperty('--word-pct', '0%');
+                        w.style.opacity = '0';
+                    });
+                }
+                lastActiveIndex = activeIndex;
+            }
+        }
+
+        function updateWordGradients(currentTime) {
+            if (lastActiveIndex < 0 || lastActiveIndex >= lyricsData.length) return;
+            const lineData = lyricsData[lastActiveIndex];
+            if (!lineData.isYrc) return;
+            const lineEl = document.getElementById(`line-${lastActiveIndex}`);
+            if (!lineEl) return;
+            const masks = lineEl.querySelectorAll('.yrc-word-mask');
+            masks.forEach(w => {
+                const start = parseFloat(w.dataset.start);
+                const dur = parseFloat(w.dataset.dur);
+                const end = start + dur;
+                let pct = 0;
+                if (currentTime < start) {
+                    pct = 0;
+                } else if (currentTime >= end) {
+                    pct = 100;
+                } else {
+                    pct = ((currentTime - start) / dur) * 100;
+                }
+                if (pct <= 0) {
+                    w.style.opacity = '0';
+                } else {
+                    w.style.opacity = '1';
+                }
+                w.style.setProperty('--word-pct', `${pct.toFixed(2)}%`);
+            });
+        }
+
+        // 启动
+        setInterval(fetchState, 500);
+        fetchState();
+        requestAnimationFrame(renderLoop);
+
+        // 初始显示动画
+        setTimeout(() => {
+            elTitle.classList.add('show');
+            elArtist.classList.add('show');
+            elProgressContainer.classList.add('show');
+            elSubControls.classList.add('show');
+        }, 500);
+    </script>
+</body>
+</html>

@@ -743,13 +743,14 @@ def monitor_loop(v3, lrc_svc):
 
                 is_moving = (ct != last_ct)
                 last_ct = ct
-                
+
+                current_mode = mode_svc.get_mode()
+
                 # ==========================================
-                # 4. 【核心优先】尝试直接读取内存 ID
+                # 3. ID 检测与元数据更新 (Metadata)
                 # ==========================================
                 memory_id = MemoryUtils.read_pointer_chain_string(pm, base, PTR_STATIC_OFFSET, PTR_OFFSETS)
-                
-                current_track_full = None
+                current_track_full = None 
                 
                 # === 分支 A: 内存读取成功 (高精度模式) ===
                 if memory_id:
@@ -848,7 +849,7 @@ def monitor_loop(v3, lrc_svc):
                                 print(" -> [降级失败] 无法同步数据")
 
                 # ==========================================
-                # 5. 更新全局状态
+                # 4. 写入静态数据 (仅在切歌时执行)
                 # ==========================================
                 if current_track_full:
                     song_id = current_track_full.get("id")
@@ -857,17 +858,6 @@ def monitor_loop(v3, lrc_svc):
                     artists = current_track_full.get('artists') or current_track_full.get('ar', [])
                     all_artist_names = [a.get('name') for a in artists]
                     artist_display_str = " / ".join(all_artist_names) if all_artist_names else "未知歌手"
-
-                    # 获取当前模式
-                    current_mode = mode_svc.get_mode()
-
-                    # 计算邻居歌曲
-                    prev_track, next_track = {}, {}
-                    if song_id:
-                    # 只有当 ID 存在且有效时才计算
-                        prev_track, next_track = v3.get_playback_neighbors(song_id, current_mode)
-                    
-                    # 更新缓存标题，防止降级逻辑死循环
                     current_song_title_cache = f"{song_name} - {'/'.join(all_artist_names)}"
                     
                     # 加载歌词
@@ -886,10 +876,17 @@ def monitor_loop(v3, lrc_svc):
                             "duration": current_track_full.get("duration", 0)
                         }
                         API_STATE['db_info'] = current_track_full
-                        API_STATE['playback']['prev_song'] = prev_track
-                        API_STATE['playback']['next_song'] = next_track
 
-                # 实时更新进度和歌词
+                # 只要 current_mode 变了，next_song 就会立刻变
+                prev_track, next_track = {}, {}
+                
+                if song_id:
+                    # 使用最新的 ID 和 最新的 Mode 计算
+                    prev_track, next_track = v3.get_playback_neighbors(song_id, current_mode)
+
+                # ==========================================
+                # 5. 写入动态数据 (进度/歌词/模式/邻居)
+                # ==========================================
                 cur_txt, cur_trans = lrc_svc.get_current_line(ct)
                 
                 with state_lock:
@@ -906,6 +903,7 @@ def monitor_loop(v3, lrc_svc):
                     }
                     API_STATE['lyrics']['current_line'] = cur_txt
                     API_STATE['lyrics']['current_trans'] = cur_trans
+
                 time.sleep(0.1)
 
             except Exception as e:
