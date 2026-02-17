@@ -697,6 +697,7 @@
         let lyricsData = []; 
         let lastActiveIndex = -1;
         let isFetchingLyrics = false;
+        let songHistory = []; // 保存歌曲历史用于判断方向
 
         let lastServerTime = 0; 
         let lastLocalTick = 0;  
@@ -739,6 +740,7 @@
         }
 
         // 图片预加载函数
+        // 【改进】不阻塞主流程，快速返回，异步确保图片缓存
         function preloadAndSetImage(element, url, isCover) {
             return new Promise((resolve, reject) => {
                 if (!url) {
@@ -758,7 +760,28 @@
                     return;
                 }
 
-                // 预加载图片
+                // 【优化】如果是img元素且src已设置且已完成加载，直接返回（不阻塞）
+                if (isCover && element.src === url && element.complete && element.naturalHeight > 0) {
+                    console.log(`[预加载] 元素已就绪: ${url.substring(url.lastIndexOf('/') + 1)}`);
+                    imageCache.set(url, true);
+                    resolve();
+                    return;
+                }
+
+                // 【关键】如果是img元素且正在加载（src已设置但complete为false），也要快速返回
+                // 让浏览器继续加载，不要等待
+                if (isCover && element.src === url && !element.complete) {
+                    console.log(`[预加载] 元素正在加载中，不再等待: ${url.substring(url.lastIndexOf('/') + 1)}`);
+                    // 注册onload回调以更新缓存，但不阻塞
+                    element.onload = () => {
+                        imageCache.set(url, true);
+                        console.log(`[预加载] 加载完成（异步回调）: ${url.substring(url.lastIndexOf('/') + 1)}`);
+                    };
+                    resolve();
+                    return;
+                }
+
+                // 预加载图片（此时element.src尚未设置或不同）
                 const img = new Image();
                 img.onload = () => {
                     imageCache.set(url, true);
@@ -767,10 +790,11 @@
                     } else {
                         element.style.backgroundImage = `url("${url}")`;
                     }
+                    console.log(`[预加载] 预加载完成: ${url.substring(url.lastIndexOf('/') + 1)}`);
                     resolve();
                 };
                 img.onerror = () => {
-                    console.warn(`Failed to load image: ${url}`);
+                    console.warn(`[预加载] 失败: ${url}`);
                     reject();
                 };
                 img.src = url;
@@ -810,15 +834,19 @@
                 nextEl.classList.add('playing');
             }
 
-            // 【优化】先立即尝试设置图片，利用浏览器HTTP缓存（小封面已加载过的图片会很快显示）
-            // 然后异步预加载验证，确保图片完全加载
+            // 【关键优化】先立即设置src，让浏览器开始加载
             nextEl.src = newUrl;
+            console.log(`[切歌] 立即设置主封面src: ${newUrl.substring(newUrl.lastIndexOf('/') + 1)}`);
             
-            preloadAndSetImage(nextEl, newUrl, true).catch(e => {
-                console.error('Cover load failed', e);
-                // 使用占位图
-                nextEl.src = DEFAULT_COVER;
-            });
+            // 【异步预加载】不阻塞动画，只是验证和缓存
+            // 如果图片已经加载完成或正在加载，preloadAndSetImage会立即返回
+            preloadAndSetImage(nextEl, newUrl, true)
+                .then(() => {
+                    console.log(`[切歌] ✅ 主封面加载确认: ${newUrl.substring(newUrl.lastIndexOf('/') + 1)}`);
+                })
+                .catch(e => {
+                    console.warn(`[切歌] 主封面加载失败: ${newUrl.substring(newUrl.lastIndexOf('/') + 1)}`);
+                });
 
             // 清理旧层
             setTimeout(() => {
@@ -975,28 +1003,54 @@
                 }
             }
 
+            // 【不提前更新邻居】在检测方向之前，保留旧的邻居信息
+            // 只有在检测完方向之后，才会更新邻居ID
+            // 这样可以确保历史推断和邻居匹配都能正确工作
+
             // 2. 切歌逻辑（优先处理，带飞行动画）
             if (info.id !== 0) {
                 if (info.id !== currentSongId) {
                     console.log(`[Frontend] 切歌: ${info.name}`);
                     console.log(`[Frontend] 当前歌曲ID: ${currentSongId}, 新歌曲ID: ${info.id}`);
                     console.log(`[Frontend] 之前的上一首ID: ${previousPrevSongId}, 之前的下一首ID: ${previousNextSongId}`);
+                    console.log(`[Frontend] 歌曲历史: ${songHistory.join('->')}`);  
                     
-                    // 检测切歌方向
+                    // 【改进的方向检测】结合历史和邻居信息
                     let direction = 'next'; // 默认假设是下一首
                     let isDirectionDetected = false; // 是否确实检测到了方向（而不是猜测的）
                     
+                    // 第一优先级：检查是否是上一首或下一首
                     if (previousPrevSongId !== 0 && info.id === previousPrevSongId) {
                         direction = 'prev'; // 切到了上一首
                         isDirectionDetected = true;
-                        console.log('[Frontend] ✅ 检测到切换到上一首 - 使用从左到右扫描，从左下飞入');
+                        console.log('[Frontend] ✅ 检测到切换到上一首（邻居匹配）');
                     } else if (previousNextSongId !== 0 && info.id === previousNextSongId) {
                         direction = 'next'; // 切到了下一首
                         isDirectionDetected = true;
-                        console.log('[Frontend] ✅ 检测到切换到下一首 - 使用从右到左扫描，从右下飞入');
-                    } else {
-                        console.log('[Frontend] ⚠️ 无法确定方向（首次播放或随机播放），使用默认（下一首）');
-                        isDirectionDetected = false;
+                        console.log('[Frontend] ✅ 检测到切换到下一首（邻居匹配）');
+                    } 
+                    // 第二优先级：使用历史推断方向（针对手动切歌）
+                    else if (songHistory.length >= 2) {
+                        const lastSongId = songHistory[songHistory.length - 1];
+                        const secondLastId = songHistory[songHistory.length - 2];
+                        
+                        if (info.id === secondLastId) {
+                            direction = 'prev'; // 回退到前面的歌
+                            isDirectionDetected = true;
+                            console.log('[Frontend] ✅ 检测到切换到上一首（历史推断）');
+                        }
+                    }
+                    
+                    if (!isDirectionDetected) {
+                        console.log('[Frontend] ⚠️ 无法确定方向（手动切歌/随机播放），使用默认（下一首）');
+                    }
+                    
+                    // 更新歌曲历史（保留最近5首）
+                    if (!songHistory.includes(info.id)) {
+                        songHistory.push(info.id);
+                        if (songHistory.length > 5) {
+                            songHistory.shift();
+                        }
                     }
                     
                     // 隐藏所有元素
@@ -1020,32 +1074,58 @@
                         }, 500);
                     }, 300);
 
-                    let coverUrl = info.cover_url || DEFAULT_COVER;
+                    // 【改进的封面获取策略】
+                    // 核心原则：只有在"完全确定"是上一首或下一首时，才从小封面读取（且必须完全加载完成）
+                    // 对于手动切歌或无法确定的情况，使用服务器URL以避免显示错误的旧图片
                     
-                    // 【优化】只有在确实检测到了方向时，才从已加载的小封面复用URL
-                    // 如果方向无法确定（手动切歌/随机播放），则使用服务器返回的URL以确保正确
-                    if (isDirectionDetected) {
+                    let coverUrl = null;
+                    let useSmallCover = false; // 是否要从小封面读取
+                    
+                    // 【严格条件】仅当通过邻居关系完全确定方向时，才考虑从小封面读取
+                    if (previousPrevSongId !== 0 && info.id === previousPrevSongId && direction === 'prev') {
+                        // 100% 确定是上一首，且之前有效的邻居关系
+                        useSmallCover = true;
+                    } else if (previousNextSongId !== 0 && info.id === previousNextSongId && direction === 'next') {
+                        // 100% 确定是下一首，且之前有效的邻居关系
+                        useSmallCover = true;
+                    }
+                    // 手动切歌（通过历史推断）或其他情况，不使用小封面，直接用服务器URL
+                    
+                    // 尝试从小封面容器中获取预加载的图片（仅在严格条件下）
+                    if (useSmallCover) {
                         try {
                             if (direction === 'prev') {
-                                // 注意：querySelectorAll返回的NodeList需要转换为数组才能使用find
                                 const img = Array.from(elPrevImgs).find(e => e.classList.contains('active'));
-                                if (img && img.src) {
+                                // 【关键】检查 img.complete 确保图片已加载完成
+                                if (img && img.src && img.src.length > 0 && img.complete) {
                                     coverUrl = img.src;
-                                    console.log('[Frontend] 📷 从已加载的小封面获取上一首图片 - 避免重复加载');
+                                    console.log('[Frontend] ✅ 从上一首小封面读取（已完全加载完成）');
+                                } else if (img && img.src) {
+                                    console.log('[Frontend] ⏳ 上一首小封面还在加载中，使用服务器URL');
                                 }
                             } else if (direction === 'next') {
-                                // 注意：querySelectorAll返回的NodeList需要转换为数组才能使用find
                                 const img = Array.from(elNextImgs).find(e => e.classList.contains('active'));
-                                if (img && img.src) {
+                                // 【关键】检查 img.complete 确保图片已加载完成
+                                if (img && img.src && img.src.length > 0 && img.complete) {
                                     coverUrl = img.src;
-                                    console.log('[Frontend] 📷 从已加载的小封面获取下一首图片 - 避免重复加载');
+                                    console.log('[Frontend] ✅ 从下一首小封面读取（已完全加载完成）');
+                                } else if (img && img.src) {
+                                    console.log('[Frontend] ⏳ 下一首小封面还在加载中，使用服务器URL');
                                 }
                             }
                         } catch (e) {
-                            console.warn('[Frontend] 获取小封面失败，使用服务器URL', e);
+                            console.warn('[Frontend] 读取小封面异常，降级到服务器URL', e);
                         }
-                    } else {
-                        console.log('[Frontend] 🎯 方向未确定，使用服务器返回的URL: ' + coverUrl);
+                    }
+                    
+                    // 如果没有从小封面获取，使用服务器URL
+                    if (!coverUrl || coverUrl === '') {
+                        coverUrl = info.cover_url || DEFAULT_COVER;
+                        if (!useSmallCover) {
+                            console.log('[Frontend] 使用服务器URL（手动切歌或方向不确定）');
+                        } else {
+                            console.log('[Frontend] ⏳ 小封面未就绪或加载失败，使用服务器URL');
+                        }
                     }
                     
                     // 重要：先更新currentSongId，即使后续操作失败也不会无限循环
@@ -1096,21 +1176,23 @@
                 activeEl.classList.remove('playing');
             }
 
-            // 5. 每次都更新上一首和下一首的ID，用于下次判断方向
-            // 这必须在切歌检测之后更新，确保下次能正确判断
-            // 注意：需要转换为数字类型，因为playback返回的是字符串
-            if (playback && playback.prev_song && playback.prev_song.id) {
-                const prevId = Number(playback.prev_song.id);
-                if (previousPrevSongId !== prevId) {
-                    console.log(`[Frontend] 更新上一首ID: ${previousPrevSongId} -> ${prevId}`);
-                    previousPrevSongId = prevId;
+            // 【最后更新邻居ID】在所有方向检测和动画处理完成后，才更新邻居信息
+            // 这样下次调用此函数时，使用的是"当前的实际邻居"而非"上次预测的邻居"
+            // 确保历史推断和邻居匹配都能正确工作
+            if (playback) {
+                if (playback.prev_song && playback.prev_song.id) {
+                    const prevId = Number(playback.prev_song.id);
+                    if (previousPrevSongId !== prevId) {
+                        console.log(`[Frontend] 更新上一首ID: ${previousPrevSongId} -> ${prevId}`);
+                        previousPrevSongId = prevId;
+                    }
                 }
-            }
-            if (playback && playback.next_song && playback.next_song.id) {
-                const nextId = Number(playback.next_song.id);
-                if (previousNextSongId !== nextId) {
-                    console.log(`[Frontend] 更新下一首ID: ${previousNextSongId} -> ${nextId}`);
-                    previousNextSongId = nextId;
+                if (playback.next_song && playback.next_song.id) {
+                    const nextId = Number(playback.next_song.id);
+                    if (previousNextSongId !== nextId) {
+                        console.log(`[Frontend] 更新下一首ID: ${previousNextSongId} -> ${nextId}`);
+                        previousNextSongId = nextId;
+                    }
                 }
             }
         }
