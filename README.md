@@ -1,23 +1,37 @@
-debug_v3为最新版本
+## NetEase Cloud Music Local API + PySide6 FluentWindow
 
-使用CE查找网易云音乐播放器的播放时间的基址和偏移量, 通过多级指针访问内存中存储的歌曲ID并比对数据库。
+项目包含两部分：
 
-内含多种兜底逻辑
+1. `main.py`：原始本地 API 服务（Flask + 网易云进程数据监控）
+2. `fluent_app.py`：新的 PySide6 + qfluentwidgets 现代化桌面界面
 
-支持罗马音/逐字歌词显示
+### 新界面功能
 
-访问接口：
+`fluent_app.py` 提供三个页面：
 
-/info 基础信息
+- 主界面：启动服务按钮
+- 设置界面：
+  - 是否显示下一首/上一首封面
+  - 是否显示音频频谱（当前网页播放器暂无频谱元素，保留设置）
+  - 是否显示歌词原文/译文/罗马音
+  - 是否优先使用逐字歌词
+  - 是否显示播放模式
+  - 快捷键设置（上一曲/下一曲/播放暂停）
+- 网页播放器界面：内嵌 `player/player.html`
 
-/lyrics 歌词
+设置会立即作用到网页播放器（通过 URL 参数实时重载）。
 
-/playlist 没做好
+### 运行
 
-/history 没做好
+```bash
+pip install PySide6 PySide6-WebEngine PyQt-Fluent-Widgets flask flask-cors pymem requests uiautomation
+python fluent_app.py
+```
 
-参考了
+### API 端点
 
-https://github.com/Widdit/now-playing-service
-
-的代码，完善了手动拖动进度条导致的进度不匹配的问题
+- `/info`
+- `/lyrics`
+- `/playlist`
+- `/history`
+- `/queue`

@@ -665,8 +665,17 @@
     </div>
 
     <script>
-        // 替换为你的 Python 服务 IP
-        const BASE_URL = "http://192.168.31.22:18726";
+        const params = new URLSearchParams(window.location.search);
+        const BASE_URL = params.get("base_url") || "http://127.0.0.1:18726";
+        const PLAYER_SETTINGS = {
+            showNeighborCovers: params.get("showNeighborCovers") !== "0",
+            showSpectrum: params.get("showSpectrum") === "1",
+            showOriginalLyric: params.get("showOriginalLyric") !== "0",
+            showTranslatedLyric: params.get("showTranslatedLyric") !== "0",
+            showRomanLyric: params.get("showRomanLyric") !== "0",
+            preferWordByWord: params.get("preferWordByWord") !== "0",
+            showPlayMode: params.get("showPlayMode") !== "0"
+        };
         const DEFAULT_COVER = "https://p2.music.126.net/tGHU62DTbzHOs014gv0zkA==/18806046882229308.jpg";
 
         // DOM 元素
@@ -685,6 +694,16 @@
         const elModeContainer = document.getElementById('mode-icon-container');
         const elProgressContainer = document.querySelector('.progress-container');
         const elSubControls = document.querySelector('.sub-controls');
+        const elPrevWrap = document.getElementById('prev-wrap');
+        const elNextWrap = document.getElementById('next-wrap');
+
+        if (!PLAYER_SETTINGS.showNeighborCovers) {
+            elPrevWrap.style.display = 'none';
+            elNextWrap.style.display = 'none';
+        }
+        if (!PLAYER_SETTINGS.showPlayMode) {
+            elModeContainer.style.display = 'none';
+        }
 
         // 小封面元素
         const elPrevImgs = document.querySelectorAll('.prev-img');
@@ -1407,19 +1426,21 @@
                 div.style.animationDelay = `${index * 0.03}s`;
 
                 let html = ``;
-                if (line.roma) html += `<span class="roma">${line.roma}</span>`;
+                if (PLAYER_SETTINGS.showRomanLyric && line.roma) html += `<span class="roma">${line.roma}</span>`;
                 
-                if (line.isYrc && line.words && line.words.length > 0) {
+                if (PLAYER_SETTINGS.preferWordByWord && line.isYrc && line.words && line.words.length > 0) {
                     html += `<div class="yrc-line-content">`;
                     line.words.forEach((w) => {
                         html += `<span class="yrc-word-box"><span class="yrc-word-base">${w.text}</span><span class="yrc-word-mask" data-start="${w.time}" data-dur="${w.duration}" style="--word-pct: 0%">${w.text}</span></span>`;
                     });
                     html += `</div>`;
                 } else {
-                    html += `<div class="lrc-text">${line.text}</div>`;
+                    if (PLAYER_SETTINGS.showOriginalLyric) {
+                        html += `<div class="lrc-text">${line.text}</div>`;
+                    }
                 }
                 
-                if (line.trans) html += `<span class="trans">${line.trans}</span>`;
+                if (PLAYER_SETTINGS.showTranslatedLyric && line.trans) html += `<span class="trans">${line.trans}</span>`;
                 div.innerHTML = html;
                 fragment.appendChild(div);
             });
