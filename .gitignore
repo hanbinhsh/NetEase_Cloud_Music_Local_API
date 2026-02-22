@@ -4,3 +4,4 @@ ce
 *.dat-wal
 *.dat-shm
 old
+__pycache__
