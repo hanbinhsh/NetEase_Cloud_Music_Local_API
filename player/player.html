@@ -27,7 +27,8 @@
         /* === 双层背景系统（扫描线效果） === */
         .bg-layer {
             position: fixed;
-            top: -100px; left: -100px; right: -100px; bottom: -100px;
+            /* 1. 将原来的 -100px 全部改为 0，避免触发手机浏览器底部工具栏的高度重绘 */
+            top: 0; left: 0; right: 0; bottom: 0;
             background-size: cover;
             background-position: center center;
             background-repeat: no-repeat;
@@ -35,6 +36,18 @@
             z-index: 1;
             opacity: 0;
             transition: opacity 0.3s ease;
+            
+            /* === 2. 解决手机端下半截闪烁的核心修复代码 === */
+            /* scale(1.2) 负责放大背景以隐藏四周的模糊白边 */
+            /* translate3d(0, 0, 0) 负责强制开启 GPU 硬件加速（3D渲染） */
+            transform: scale(1.2) translate3d(0, 0, 0); 
+            
+            /* 3. 隐藏背面，防止图层在动画期间发生不必要的重新光栅化（闪烁元凶） */
+            backface-visibility: hidden; 
+            perspective: 1000px;
+            
+            /* 4. 提前告知浏览器我们会对这俩属性做动画，让它提前分配好显存 */
+            will-change: clip-path, opacity; 
         }
 
         .bg-layer.active {
@@ -108,6 +121,12 @@
             width: 320px;
             height: 320px;
             margin-bottom: 25px;
+            cursor: pointer; /* 新增鼠标指针 */
+            transition: transform 0.15s ease; /* 新增容器的过渡动画 */
+        }
+
+        .album-art-container:active {
+            transform: scale(0.96);
         }
 
         .album-art {
@@ -543,6 +562,98 @@
             font-size: 34px; 
         }
 
+        /* === 右上角按钮组 === */
+        .top-right-btns {
+            position: absolute;
+            top: 25px; right: 25px;
+            display: flex; gap: 15px;
+            z-index: 100;
+            transition: all 0.3s ease;
+        }
+        .top-right-btns.fade-out {
+            opacity: 0 !important;
+            pointer-events: none;
+            transform: translateY(-10px);
+        }
+        .icon-btn {
+            width: 28px; height: 28px;
+            cursor: pointer; opacity: 0.4;
+            transition: all 0.3s ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .icon-btn:hover, .icon-btn:active {
+            opacity: 1; transform: scale(1.15);
+        }
+        .icon-btn svg {
+            fill: #fff; width: 100%; height: 100%;
+            filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+        }
+
+        /* === 频谱画布 === */
+        .spectrum-canvas {
+            position: fixed;
+            bottom: 0; left: 0;
+            width: 100%; height: 20vh; /* 占据底部 20% 高度 */
+            z-index: 2; /* 在背景图之上(1)，在内容之下(10) */
+            pointer-events: none; /* 让鼠标点击能穿透频谱 */
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+        .spectrum-canvas.show { opacity: 1; }
+
+        /* === 设置侧边栏 === */
+        .settings-overlay {
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.4);
+            z-index: 199; opacity: 0; pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .settings-overlay.active {
+            opacity: 1; pointer-events: auto;
+        }
+        .settings-sidebar {
+            position: fixed;
+            top: 0; right: -320px;
+            width: 300px; height: 100%;
+            background: rgba(20, 20, 20, 0.75);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            z-index: 200;
+            padding: 30px 25px; box-sizing: border-box;
+            border-left: 1px solid rgba(255,255,255,0.1);
+            transition: right 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+        }
+        .settings-sidebar.active { right: 0; }
+        .settings-sidebar h3 {
+            color: #fff; margin-top: 0; margin-bottom: 30px;
+            font-size: 20px; font-weight: 600;
+        }
+        .setting-item {
+            display: flex; justify-content: space-between; align-items: center;
+            color: rgba(255,255,255,0.9); font-size: 16px;
+        }
+
+        /* === iOS 风格开关 === */
+        .switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: rgba(255,255,255,0.2);
+            transition: .4s; border-radius: 34px;
+        }
+        .slider:before {
+            position: absolute; content: "";
+            height: 20px; width: 20px;
+            left: 4px; bottom: 4px;
+            background-color: white; transition: .4s; border-radius: 50%;
+        }
+        input:checked + .slider { background-color: #fff; }
+        input:checked + .slider:before {
+            transform: translateX(22px); background-color: #000;
+        }
+
         /* === 加载动画 === */
         @keyframes shimmer {
             0% { background-position: -200% 0; }
@@ -575,6 +686,12 @@
                 width: 200px; 
                 height: 200px; 
                 margin-bottom: 15px; 
+                cursor: pointer; /* 新增鼠标指针 */
+                transition: transform 0.15s ease; /* 新增容器的过渡动画 */
+            }
+
+            .album-art-container:active {
+                transform: scale(0.96);
             }
 
             .sub-controls { 
@@ -616,6 +733,21 @@
     <!-- 双层背景 -->
     <div class="bg-layer" id="bg-layer-1"></div>
     <div class="bg-layer" id="bg-layer-2"></div>
+
+    <div id="top-right-btns" class="top-right-btns">
+        <!-- 设置按钮 -->
+        <div id="settings-btn" class="icon-btn" title="设置">
+            <svg viewBox="0 0 24 24">
+                <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+            </svg>
+        </div>
+        <!-- 全屏按钮 -->
+        <div id="fullscreen-btn" class="icon-btn" title="全屏">
+            <svg viewBox="0 0 24 24">
+                <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+        </div>
+    </div>
 
     <div class="container">
         <!-- 左侧信息区 -->
@@ -664,10 +796,29 @@
         </div>
     </div>
 
+    <!-- 新增：频谱可视化画布 (置于背景上方，UI下方) -->
+    <canvas id="spectrum-cvs" class="spectrum-canvas"></canvas>
+
+    <!-- 新增：设置侧边栏与遮罩 -->
+    <div class="settings-overlay" id="settings-overlay"></div>
+    <div class="settings-sidebar" id="settings-sidebar">
+        <h3>播放器设置</h3>
+        <div class="setting-item">
+            <span>开启音频频谱可视化</span>
+            <label class="switch">
+                <input type="checkbox" id="toggle-spectrum">
+                <span class="slider round"></span>
+            </label>
+        </div>
+        <div style="font-size: 12px; color: rgba(255,255,255,0.5); margin-top: 10px;">
+            * 依赖 SAO Utils ADV 插件运行在 5050 端口
+        </div>
+    </div>
+
     <script>
         // 替换为你的 Python 服务 IP
-        const BASE_URL = "http://192.168.31.22:18726";
-        const DEFAULT_COVER = "https://p2.music.126.net/tGHU62DTbzHOs014gv0zkA==/18806046882229308.jpg";
+        const BASE_URL = window.location.origin;
+        const DEFAULT_COVER = "./player/images.jpg";
 
         // DOM 元素
         const elBg1 = document.getElementById('bg-layer-1');
@@ -718,6 +869,59 @@
         elBg1.classList.add('active'); // 初始背景不需要扫描动画
         elBg1.style.zIndex = '2'; // 初始激活层设为较高的z-index
         elCover1.classList.add('active');
+
+        // === 新增：全屏切换逻辑 ===
+        const elFullscreenBtn = document.getElementById('fullscreen-btn');
+        const elTopRightBtns = document.getElementById('top-right-btns');
+
+        elFullscreenBtn.addEventListener('click', () => {
+            const doc = window.document;
+            const docEl = doc.documentElement;
+
+            // 兼容各种浏览器的全屏API
+            const requestFullScreen = docEl.requestFullscreen || docEl.mozRequestFullScreen || docEl.webkitRequestFullScreen || docEl.msRequestFullscreen;
+            const cancelFullScreen = doc.exitFullscreen || doc.mozCancelFullScreen || doc.webkitExitFullscreen || doc.msExitFullscreen;
+
+            if (!doc.fullscreenElement && !doc.mozFullScreenElement && !doc.webkitFullscreenElement && !doc.msFullscreenElement) {
+                // 进入全屏
+                requestFullScreen.call(docEl).catch(err => {
+                    console.log(`全屏请求被拒绝: ${err.message}`);
+                });
+            } else {
+                // 退出全屏
+                cancelFullScreen.call(doc);
+            }
+        });
+
+        // === 新增：全屏按钮的自动隐藏与唤醒逻辑 ===
+        let hideBtnTimeout;
+
+        function showBtnTemporarily() {
+            elTopRightBtns.classList.remove('fade-out');
+            clearTimeout(hideBtnTimeout);
+            hideBtnTimeout = setTimeout(() => {
+                // 如果侧边栏处于打开状态，暂不隐藏按钮
+                if (!document.getElementById('settings-sidebar').classList.contains('active')) {
+                    elTopRightBtns.classList.add('fade-out');
+                }
+            }, 3000);
+        }
+
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('#top-right-btns') || e.target.closest('#settings-sidebar')) {
+                showBtnTemporarily();
+                return;
+            }
+            if (elTopRightBtns.classList.contains('fade-out')) {
+                showBtnTemporarily();
+            } else {
+                elTopRightBtns.classList.add('fade-out');
+                clearTimeout(hideBtnTimeout);
+            }
+        });
+
+        // 页面刚加载时，默认显示3秒钟提醒用户，随后自动隐藏
+        showBtnTemporarily();
 
         // 仅预加载图片到缓存，不设置到元素
         function preloadImageToCache(url) {
@@ -987,7 +1191,7 @@
                 if (!data.playing) {
                     lastRenderedTime = playback.current_sec;
                 }
-                if (Math.abs(playback.current_sec - lastRenderedTime) > 0.5) {
+                if (Math.abs(playback.current_sec - lastRenderedTime) > 1) { // TODO 进度跳变超过X秒，立即更新显示 加入设置
                     lastRenderedTime = playback.current_sec; 
                 }
 
@@ -1395,6 +1599,16 @@
 
             if (!lyrics || lyrics.length === 0) {
                 elLyricsBox.innerHTML = '<div class="lrc-line" style="text-align:center; opacity:0.5;">🎵 纯音乐 / 暂无歌词</div>';
+                
+                // 纯音乐提示也立即居中
+                requestAnimationFrame(() => {
+                    const line = elLyricsBox.querySelector('.lrc-line');
+                    if (line) {
+                        const offset = line.offsetTop - (elViewport.clientHeight / 2) + (line.clientHeight / 2);
+                        elViewport.scrollTo({ top: offset, behavior: 'auto' });
+                    }
+                });
+
                 setTimeout(() => elLyricsBox.classList.add('show'), 100);
                 return;
             }
@@ -1425,6 +1639,18 @@
             });
             
             elLyricsBox.appendChild(fragment);
+
+            // 加载出歌词后，立即将滚动条定位到第一句，确保刚切歌时第一句居中
+            requestAnimationFrame(() => {
+                const firstLine = elLyricsBox.querySelector('.lrc-line');
+                if (firstLine) {
+                    // 计算第一行在视口中居中需要的 scrollTop
+                    const offset = firstLine.offsetTop - (elViewport.clientHeight / 2) + (firstLine.clientHeight / 2);
+                    // behavior: 'auto' 表示瞬间跳转，切歌时不带平滑滚动动画
+                    elViewport.scrollTo({ top: offset, behavior: 'auto' });
+                }
+            });
+
             setTimeout(() => elLyricsBox.classList.add('show'), 100);
         }
 
@@ -1463,6 +1689,17 @@
                         w.style.setProperty('--word-pct', '0%');
                         w.style.opacity = '0';
                     });
+                } 
+                // 如果时间退回到第一句歌词之前（如拉回歌曲开头），平滑滚动回第一句
+                else if (activeIndex === -1) {
+                    if (lines.length > 0) {
+                        const firstLine = lines[0];
+                        const offset = firstLine.offsetTop - (elViewport.clientHeight / 2) + (firstLine.clientHeight / 2);
+                        elViewport.scrollTo({
+                            top: offset,
+                            behavior: 'smooth'
+                        });
+                    }
                 }
                 lastActiveIndex = activeIndex;
             }
@@ -1495,6 +1732,156 @@
                 w.style.setProperty('--word-pct', `${pct.toFixed(2)}%`);
             });
         }
+
+        // === 绑定播放控制事件 ===
+        // 1. 上一首小封面点击
+        document.getElementById('prev-wrap').addEventListener('click', () => {
+            fetch(`${BASE_URL}/control/prev`, { method: 'POST' }).catch(console.error);
+            // 可选：给小封面自身加一点点击反馈，让用户感觉确实按下了
+            const wrap = document.getElementById('prev-wrap');
+            wrap.style.transform = 'scale(0.9)';
+            setTimeout(() => wrap.style.transform = '', 150);
+        });
+
+        // 2. 下一首小封面点击
+        document.getElementById('next-wrap').addEventListener('click', () => {
+            fetch(`${BASE_URL}/control/next`, { method: 'POST' }).catch(console.error);
+            const wrap = document.getElementById('next-wrap');
+            wrap.style.transform = 'scale(0.9)';
+            setTimeout(() => wrap.style.transform = '', 150);
+        });
+
+        // 3. 大封面点击 (播放/暂停)
+        document.querySelector('.album-art-container').addEventListener('click', () => {
+            fetch(`${BASE_URL}/control/playpause`, { method: 'POST' }).catch(console.error);
+        });
+
+        // === 设置侧边栏开关交互 ===
+        const elSettingsBtn = document.getElementById('settings-btn');
+        const elSettingsSidebar = document.getElementById('settings-sidebar');
+        const elSettingsOverlay = document.getElementById('settings-overlay');
+
+        function toggleSidebar() {
+            elSettingsSidebar.classList.toggle('active');
+            elSettingsOverlay.classList.toggle('active');
+            showBtnTemporarily(); // 保持按钮显示
+        }
+
+        elSettingsBtn.addEventListener('click', toggleSidebar);
+        elSettingsOverlay.addEventListener('click', toggleSidebar);
+
+        // === 频谱可视化核心逻辑 ===
+        let spectrumEnabled = localStorage.getItem('spectrumEnabled') === 'true';
+        const elToggleSpectrum = document.getElementById('toggle-spectrum');
+        const cvs = document.getElementById('spectrum-cvs');
+        const ctx = cvs.getContext('2d');
+        
+        let wsAdv = null;
+        let animFrameId = null;
+        let peakValue = 20;
+        let audioData = new Array(128).fill(0);
+        let animeData = new Array(128).fill(0);
+
+        // 响应窗口尺寸变化
+        function resizeSpectrum() {
+            cvs.width = window.innerWidth;
+            cvs.height = window.innerHeight * 0.2; // 占底部的 20%
+        }
+        window.addEventListener('resize', resizeSpectrum);
+        resizeSpectrum();
+
+        function startSpectrum() {
+            if (wsAdv) return;
+            cvs.classList.add('show');
+            
+            // 使用当前访问的域名IP，确保手机访问 192.168.x.x 也能连上电脑的 5050 端口
+            const wsUrl = `ws://${window.location.hostname}:5050`;
+            
+            try {
+                wsAdv = new WebSocket(wsUrl);
+                // 性能优化：直接接收 arraybuffer，省去 FileReader 的转换性能损耗
+                wsAdv.binaryType = "arraybuffer";
+
+                wsAdv.onmessage = function(evt) {
+                    if (!spectrumEnabled) return;
+                    const data = new Float32Array(evt.data);
+                    
+                    let max = 0;
+                    for (let i = 0; i < 128; i++) {
+                        if (data[i] > max) max = data[i];
+                    }
+
+                    // ====== 【核心修复：瞬态响应算法】 ======
+                    if (max > peakValue) {
+                        // 1. 瞬态起音 (Attack)：遇到突然的强低频，瞬间拔高基准值，保证算出来的值永远 <= 1.0，彻底告别平头截断
+                        peakValue = max; 
+                    } else {
+                        // 2. 平滑释放 (Release)：没有强音时，缓慢回落，保持画面动感
+                        peakValue = peakValue * 0.98 + max * 0.02; 
+                    }
+                    
+                    // 3. 设置保底阈值：防止音乐暂停或极小声时，细微的底噪被无限放大为满屏柱子
+                    if (peakValue < 10) peakValue = 10; 
+                    // =======================================
+
+                    // 左右镜像对折计算
+                    for (let i = 0; i < 64; i++) {
+                        audioData[63 - i] = data[i] / peakValue;
+                        audioData[127 - i] = data[127 - i] / peakValue;
+                    }
+                };
+
+                if (!animFrameId) renderSpectrum();
+            } catch (e) {
+                console.error("频谱服务连接失败", e);
+            }
+        }
+
+        function stopSpectrum() {
+            cvs.classList.remove('show');
+            if (wsAdv) { wsAdv.close(); wsAdv = null; }
+            if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
+            audioData.fill(0); animeData.fill(0);
+        }
+
+        function renderSpectrum() {
+            if (!spectrumEnabled) return;
+            animFrameId = requestAnimationFrame(renderSpectrum);
+
+            for (let i = 0; i < 128; i++) {
+                animeData[i] += (audioData[i] - animeData[i]) * 0.3; // 平滑过渡
+                animeData[i] = Math.min(animeData[i], 1);
+            }
+
+            ctx.clearRect(0, 0, cvs.width, cvs.height);
+            // 频谱颜色：半透明白色，能很好地融合任何深色背景封面
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            
+            const step = cvs.width / 128;
+            const barWidth = Math.max(1, Math.round(cvs.width / 512)); // 根据屏幕宽度动态计算柱子宽度
+
+            for (let i = 0; i < 128; i++) {
+                // 计算当前柱子高度
+                const h = cvs.height * animeData[i];
+                // 绘制在屏幕最底部，往上生长
+                ctx.fillRect(step * i, cvs.height - h, barWidth, h);
+            }
+        }
+
+        // 初始化状态读取
+        elToggleSpectrum.checked = spectrumEnabled;
+        if (spectrumEnabled) startSpectrum();
+
+        elToggleSpectrum.addEventListener('change', (e) => {
+            spectrumEnabled = e.target.checked;
+            localStorage.setItem('spectrumEnabled', spectrumEnabled); // 记住用户选择
+            if (spectrumEnabled) {
+                startSpectrum();
+            } else {
+                stopSpectrum();
+            }
+        });
 
         // 启动
         setInterval(fetchState, 500);

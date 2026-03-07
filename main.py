@@ -8,7 +8,7 @@ import requests
 import re
 import threading
 import ctypes
-from flask import Flask, Response
+from flask import Flask, Response, send_file
 from flask_cors import CORS
 from urllib.parse import quote
 import uiautomation as auto
@@ -278,6 +278,27 @@ class PlayModeService:
             self.window = None
             self.control_bar = None
         return self.current_mode
+    
+# ===========================
+# 0.5 按键模拟工具 (触发全局快捷键)
+# ===========================
+class KeyboardHelper:
+    VK_CTRL = 0x11
+    VK_ALT = 0x12
+    VK_LEFT = 0x25
+    VK_RIGHT = 0x27
+    VK_P = 0x50
+
+    @staticmethod
+    def press_shortcut(keys):
+        """模拟组合键按下与抬起"""
+        # 依次按下按键
+        for k in keys:
+            ctypes.windll.user32.keybd_event(k, 0, 0, 0)
+        time.sleep(0.05)
+        # 逆序松开按键 (2 代表 KEYEVENTF_KEYUP)
+        for k in reversed(keys):
+            ctypes.windll.user32.keybd_event(k, 0, 2, 0)
 
 # ===========================
 # 1. 数据库服务
@@ -285,10 +306,18 @@ class PlayModeService:
 class NeteaseV3Service:
     def __init__(self):
         self.user_home = os.path.expanduser("~")
-        self.db_path = os.path.join(self.user_home, r"AppData\Local\NetEase\CloudMusic\Library\webdb.dat")
+        self.db_path = os.path.join(
+            self.user_home,
+            r"AppData\Local\NetEase\CloudMusic\Library\webdb.dat"
+        )
+
         self.last_db_playtime = 0
         self.last_file_mtime = 0
-        self.current_full_data = None 
+        self.current_full_data = None
+
+        # 播放列表缓存
+        self.playing_list_cache = []
+        self.playing_list_mtime = 0
 
     def check_db_update(self):
         """检查数据库文件是否有更新 (同时检查 .dat 和 .dat-wal)"""
@@ -472,12 +501,6 @@ class NeteaseV3Service:
     def get_playlist_list(self):
         """获取用户歌单列表 (自动解析 JSON)"""
         return self._get_all_raw_data("web_user_playlist")
-    
-    def __init__(self):
-        # ... 原有初始化 ...
-        # 新增缓存变量
-        self.playing_list_cache = []
-        self.playing_list_mtime = 0
 
     def get_raw_playing_list(self):
         """
@@ -977,6 +1000,48 @@ def get_queue():
         }, ensure_ascii=False), 
         mimetype='application/json'
     )
+
+@app.route('/control/<action>', methods=['POST'])
+def control_player(action):
+    """播放控制接口"""
+    try:
+        if action == 'prev':
+            KeyboardHelper.press_shortcut([KeyboardHelper.VK_CTRL, KeyboardHelper.VK_ALT, KeyboardHelper.VK_LEFT])
+        elif action == 'next':
+            KeyboardHelper.press_shortcut([KeyboardHelper.VK_CTRL, KeyboardHelper.VK_ALT, KeyboardHelper.VK_RIGHT])
+        elif action == 'playpause':
+            KeyboardHelper.press_shortcut([KeyboardHelper.VK_CTRL, KeyboardHelper.VK_ALT, KeyboardHelper.VK_P])
+        else:
+            return Response(json.dumps({"code": 400, "msg": "Unknown action"}), mimetype='application/json')
+            
+        return Response(json.dumps({"code": 200, "msg": "success"}), mimetype='application/json')
+    except Exception as e:
+        return Response(json.dumps({"code": 500, "msg": str(e)}), mimetype='application/json')
+    
+@app.route('/', methods=['GET'])
+@app.route('/player', methods=['GET'])
+def serve_player():
+    """托管前端 HTML 页面"""
+    # 假设 player.html 和 main.py 在同一个文件夹下
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(current_dir, 'player/player.html')
+    
+    if os.path.exists(html_path):
+        return send_file(html_path)
+    else:
+        return Response("找不到 player.html，请确保它和 main.py 在同一目录", status=404)
+
+@app.route('/<path:filename>')
+def serve_static_files(filename):
+    """【可选】如果你有 images.jpg 等本地默认封面，需要加上这个路由让 Flask 也能发送图片"""
+    from flask import send_from_directory
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    return send_from_directory(current_dir, filename)
+
+@app.after_request
+def add_header(response):
+    response.cache_control.no_store = True
+    return response
 
 if __name__ == "__main__":
     # 在这里把全局的 service 传给 monitor
