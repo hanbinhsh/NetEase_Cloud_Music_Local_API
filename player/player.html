@@ -16,7 +16,7 @@
         body, html {
             margin: 0;
             padding: 0;
-            height: 100%;
+            height: 100dvh;
             width: 100%;
             overflow: hidden;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -25,42 +25,53 @@
         }
 
         /* === 双层背景系统（扫描线效果） === */
+        /* === 优化后的双层背景系统 === */
         .bg-layer {
             position: fixed;
-            /* 1. 将原来的 -100px 全部改为 0，避免触发手机浏览器底部工具栏的高度重绘 */
             top: 0; left: 0; right: 0; bottom: 0;
-            background-size: cover;
-            background-position: center center;
-            background-repeat: no-repeat;
-            filter: blur(var(--blur-intensity)) brightness(0.5);
             z-index: 1;
             opacity: 0;
             transition: opacity 0.3s ease;
             
-            /* === 2. 解决手机端下半截闪烁的核心修复代码 === */
-            /* scale(1.2) 负责放大背景以隐藏四周的模糊白边 */
-            /* translate3d(0, 0, 0) 负责强制开启 GPU 硬件加速（3D渲染） */
-            transform: scale(1.2) translate3d(0, 0, 0); 
-            
-            /* 3. 隐藏背面，防止图层在动画期间发生不必要的重新光栅化（闪烁元凶） */
+            /* 父层只负责动画和裁剪，不处理模糊 */
+            transform: translate3d(0, 0, 0); 
             backface-visibility: hidden; 
             perspective: 1000px;
-            
-            /* 4. 提前告知浏览器我们会对这俩属性做动画，让它提前分配好显存 */
             will-change: clip-path, opacity; 
+            clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
+        }
+
+        /* 新增：利用伪元素承载重度滤镜，作为静态纹理层 */
+        .bg-layer::before {
+            content: "";
+            position: absolute;
+            /* 范围拉大，配合 scale 防止边缘漏边 */
+            top: -10%; left: -10%; right: -10%; bottom: -10%; 
+            background-size: cover;
+            background-position: center center;
+            background-repeat: no-repeat;
+            
+            /* 继承父层 JS 设置的内联 background-image */
+            background-image: inherit; 
+            
+            /* 将重度性能消耗的属性全部转移到这个静态层 */
+            filter: blur(var(--blur-intensity)) brightness(0.5);
+            transform: scale(1.2) translate3d(0, 0, 0); 
+            
+            /* 告知 GPU 缓存此图层，不要每帧重绘 */
+            will-change: transform; 
         }
 
         .bg-layer.active {
             opacity: 1;
         }
 
-        /* 从左到右扫描（上一首） - 覆盖transition，使用动画 */
+        /* 动画部分保持你上一版的扩大边界设定不变 */
         .bg-layer.scan-left-to-right {
             animation: scanlineLeftToRight 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
             transition: none;
         }
 
-        /* 从右到左扫描（下一首） - 覆盖transition，使用动画 */
         .bg-layer.scan-right-to-left {
             animation: scanlineRightToLeft 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
             transition: none;
@@ -69,22 +80,22 @@
         @keyframes scanlineLeftToRight {
             from {
                 opacity: 1;
-                clip-path: polygon(0 0, 0 0, 0 100%, 0 100%);
+                clip-path: polygon(-10% -10%, -10% -10%, -10% 110%, -10% 110%);
             }
             to {
                 opacity: 1;
-                clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+                clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
             }
         }
 
         @keyframes scanlineRightToLeft {
             from {
                 opacity: 1;
-                clip-path: polygon(100% 0, 100% 0, 100% 100%, 100% 100%);
+                clip-path: polygon(110% -10%, 110% -10%, 110% 110%, 110% 110%);
             }
             to {
                 opacity: 1;
-                clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+                clip-path: polygon(-10% -10%, 110% -10%, 110% 110%, -10% 110%);
             }
         }
 
@@ -593,11 +604,15 @@
         .spectrum-canvas {
             position: fixed;
             bottom: 0; left: 0;
-            width: 100%; height: 20vh; /* 占据底部 20% 高度 */
-            z-index: 2; /* 在背景图之上(1)，在内容之下(10) */
-            pointer-events: none; /* 让鼠标点击能穿透频谱 */
+            width: 100%; height: 20vh;
+            z-index: 2; 
+            pointer-events: none; 
             opacity: 0;
             transition: opacity 0.5s ease;
+            
+            /* === 新增：强制 Canvas 提升为独立的 Compositor Layer === */
+            transform: translateZ(0);
+            will-change: transform;
         }
         .spectrum-canvas.show { opacity: 1; }
 
