@@ -714,11 +714,11 @@ def format_t(s):
 def monitor_loop(v3, lrc_svc):
     with auto.UIAutomationInitializerInThread():
         # === 内存指针配置 ===
-        PTR_STATIC_OFFSET = 0x01DDE250
+        PTR_STATIC_OFFSET = 0x01DF3490
         PTR_OFFSETS = [0x10, 0, 0x10, 0x68, 0]
         
-        OFF_CURR = 0x1D7E8F8
-        OFF_TOTAL = 0x1DDEF58
+        OFF_CURR = 0x1D93930
+        OFF_TOTAL = 0x1DF4198
 
         mode_svc = PlayModeService()
         
