@@ -8,7 +8,7 @@ import requests
 import re
 import threading
 import ctypes
-from flask import Flask, Response, send_file
+from flask import Flask, Response, send_file, send_from_directory
 from flask_cors import CORS
 from urllib.parse import quote
 import uiautomation as auto
@@ -1031,10 +1031,19 @@ def serve_player():
     else:
         return Response("找不到 player.html，请确保它和 main.py 在同一目录", status=404)
 
+@app.route('/wallpaper', methods=['GET'])
+def serve_wallpaper():
+    """托管 Wallpaper Engine 预览页面。"""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    html_path = os.path.join(current_dir, 'wallpaper', 'index.html')
+
+    if os.path.exists(html_path):
+        return send_file(html_path)
+    return Response("找不到 wallpaper/index.html", status=404)
+
 @app.route('/<path:filename>')
 def serve_static_files(filename):
-    """【可选】如果你有 images.jpg 等本地默认封面，需要加上这个路由让 Flask 也能发送图片"""
-    from flask import send_from_directory
+    """托管仓库内的静态文件，便于浏览器预览和本地调试。"""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     return send_from_directory(current_dir, filename)
 

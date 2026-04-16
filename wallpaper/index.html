@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="no-referrer">
+    <title>CloudMusic Wallpaper</title>
+    <style>
+        :root {
+            --bg-a: #0f172a;
+            --bg-b: #1d4ed8;
+            --bg-c: #0f766e;
+            --glass-opacity: 0.58;
+            --glass-border: rgba(255, 255, 255, 0.14);
+            --glass-bg: rgba(14, 18, 28, var(--glass-opacity));
+            --text-strong: rgba(255, 255, 255, 0.96);
+            --text-soft: rgba(230, 236, 246, 0.72);
+            --text-faint: rgba(230, 236, 246, 0.48);
+            --accent-rgb: 139, 214, 255;
+            --blur-strength: 26px;
+            --mouse-x: 50vw;
+            --mouse-y: 50vh;
+            --mouse-shift-x: 0px;
+            --mouse-shift-y: 0px;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #07111b;
+            color: var(--text-strong);
+            font-family: "Segoe UI Variable Text", "Microsoft YaHei UI", "PingFang SC", sans-serif;
+            user-select: none;
+        }
+
+        body {
+            position: relative;
+        }
+
+        .bg {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            transform: translate3d(calc(var(--mouse-shift-x) * 0.24), calc(var(--mouse-shift-y) * 0.24), 0);
+            transition: transform 220ms ease-out;
+        }
+
+        .bg-gradient,
+        .bg-cover,
+        .bg-noise,
+        .bg-vignette,
+        .cursor-glow {
+            position: absolute;
+            inset: -8%;
+        }
+
+        .bg-gradient {
+            background:
+                radial-gradient(circle at 20% 20%, rgba(var(--accent-rgb), 0.24), transparent 32%),
+                radial-gradient(circle at 78% 18%, rgba(255, 255, 255, 0.12), transparent 24%),
+                linear-gradient(135deg, var(--bg-a), var(--bg-b) 52%, var(--bg-c));
+            filter: saturate(1.12);
+        }
+
+        .bg-cover {
+            background-position: center;
+            background-repeat: no-repeat;
+            background-size: cover;
+            opacity: 0;
+            filter: blur(calc(var(--blur-strength) * 1.15)) saturate(1.05) brightness(0.82);
+            transform: scale(1.08);
+            transition: opacity 700ms ease, transform 700ms ease;
+        }
+
+        .bg-cover.active {
+            opacity: 0.62;
+        }
+
+        .bg-noise {
+            opacity: 0.08;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 5px 5px, 5px 5px;
+            mix-blend-mode: soft-light;
+        }
+
+        .bg-vignette {
+            inset: 0;
+            background:
+                radial-gradient(circle at center, transparent 42%, rgba(2, 6, 14, 0.28) 100%),
+                linear-gradient(180deg, rgba(2, 6, 14, 0.34), rgba(2, 6, 14, 0.62));
+        }
+
+        .cursor-glow {
+            inset: auto;
+            width: 34vw;
+            height: 34vw;
+            left: calc(var(--mouse-x) - 17vw);
+            top: calc(var(--mouse-y) - 17vw);
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(var(--accent-rgb), 0.28), transparent 66%);
+            filter: blur(28px);
+            opacity: 0.8;
+            pointer-events: none;
+            transition: left 180ms ease-out, top 180ms ease-out, opacity 180ms ease-out;
+        }
+
+        .shell {
+            position: relative;
+            z-index: 2;
+            display: grid;
+            grid-template-columns: minmax(360px, 520px) minmax(320px, 1fr);
+            grid-template-rows: auto 1fr;
+            gap: 24px;
+            height: 100%;
+            padding: 28px;
+        }
+
+        .glass {
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
+            backdrop-filter: blur(var(--blur-strength)) saturate(1.15);
+            -webkit-backdrop-filter: blur(var(--blur-strength)) saturate(1.15);
+        }
+
+        .topbar {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            min-height: 108px;
+            padding: 22px 24px;
+            border-radius: 26px;
+        }
+
+        .brand {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+            padding: 8px 12px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-soft);
+            font-size: 13px;
+            letter-spacing: 0.02em;
+        }
+
+        .badge::before {
+            content: "";
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(var(--accent-rgb), 1);
+            box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.8);
+        }
+
+        .brand h1,
+        .clock-main,
+        .song-name {
+            margin: 0;
+            font-weight: 700;
+        }
+
+        .brand h1 {
+            font-size: 28px;
+            letter-spacing: 0.04em;
+        }
+
+        .brand p,
+        .clock-sub,
+        .song-meta,
+        .status-note,
+        .lyric-empty,
+        .setting-label,
+        .setting-value,
+        .timebar {
+            margin: 0;
+            color: var(--text-soft);
+        }
+
+        .clock {
+            display: flex;
+            align-items: center;
+            gap: 18px;
+        }
+
+        .clock-main {
+            font-size: clamp(42px, 6vw, 64px);
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .clock-sub {
+            font-size: 15px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .player-card,
+        .lyrics-card {
+            border-radius: 32px;
+            overflow: hidden;
+        }
+
+        .player-card {
+            padding: 24px;
+            display: grid;
+            grid-template-rows: auto auto auto auto;
+            gap: 20px;
+            transform: translate3d(calc(var(--mouse-shift-x) * 0.08), calc(var(--mouse-shift-y) * 0.08), 0);
+            transition: transform 220ms ease-out;
+        }
+
+        .cover-wrap {
+            position: relative;
+            width: min(34vw, 360px);
+            max-width: 100%;
+            aspect-ratio: 1;
+            border-radius: 28px;
+            overflow: hidden;
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+                rgba(255, 255, 255, 0.04);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+        }
+
+        .cover-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .cover-fallback {
+            position: absolute;
+            inset: 0;
+            display: grid;
+            place-items: center;
+            font-size: 18px;
+            color: var(--text-soft);
+            background:
+                radial-gradient(circle at 30% 30%, rgba(var(--accent-rgb), 0.2), transparent 34%),
+                linear-gradient(140deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+        }
+
+        .song-name {
+            font-size: clamp(26px, 4vw, 38px);
+            line-height: 1.08;
+        }
+
+        .song-meta {
+            font-size: 15px;
+            margin-top: 8px;
+        }
+
+        .timebar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .progress {
+            position: relative;
+            height: 10px;
+            border-radius: 999px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .progress-fill {
+            width: 0%;
+            height: 100%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.54), rgba(255, 255, 255, 0.92));
+            box-shadow: 0 0 22px rgba(var(--accent-rgb), 0.35);
+            transition: width 200ms linear;
+        }
+
+        .controls,
+        .quick-chips,
+        .toolbar,
+        .setting-row {
+            display: flex;
+            align-items: center;
+        }
+
+        .controls {
+            gap: 12px;
+        }
+
+        .control-btn,
+        .chip-btn,
+        .icon-btn {
+            appearance: none;
+            border: 0;
+            outline: 0;
+            color: var(--text-strong);
+            cursor: pointer;
+            transition: transform 150ms ease, background 150ms ease, opacity 150ms ease;
+        }
+
+        .control-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.1);
+            font-size: 18px;
+        }
+
+        .control-btn.primary {
+            background: rgba(var(--accent-rgb), 0.2);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+        }
+
+        .chip-btn,
+        .icon-btn {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .chip-btn {
+            border-radius: 999px;
+            padding: 10px 14px;
+            font-size: 13px;
+            color: var(--text-soft);
+        }
+
+        .icon-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            font-size: 16px;
+        }
+
+        .control-btn:hover,
+        .chip-btn:hover,
+        .icon-btn:hover {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.16);
+        }
+
+        .toolbar {
+            justify-content: space-between;
+            gap: 12px;
+            margin-top: 6px;
+        }
+
+        .quick-chips {
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .status-note {
+            font-size: 13px;
+        }
+
+        .neighbor-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .neighbor-card {
+            width: 56px;
+            height: 56px;
+            border-radius: 18px;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .neighbor-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            opacity: 0;
+            transition: opacity 260ms ease, transform 260ms ease;
+        }
+
+        .neighbor-card img.ready {
+            opacity: 1;
+        }
+
+        .neighbor-label {
+            font-size: 12px;
+            color: var(--text-faint);
+        }
+
+        .lyrics-card {
+            position: relative;
+            padding: 24px 22px 22px;
+            display: grid;
+            grid-template-rows: auto auto 1fr;
+            gap: 18px;
+            transform: translate3d(calc(var(--mouse-shift-x) * -0.05), calc(var(--mouse-shift-y) * -0.05), 0);
+            transition: transform 220ms ease-out;
+        }
+
+        .lyrics-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .lyrics-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .lyrics-now {
+            min-height: 92px;
+            padding: 18px;
+            border-radius: 22px;
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .lyrics-now-main {
+            font-size: clamp(22px, 3vw, 32px);
+            line-height: 1.2;
+            font-weight: 700;
+        }
+
+        .lyrics-now-sub {
+            margin-top: 10px;
+            font-size: 15px;
+            color: var(--text-soft);
+        }
+
+        .lyrics-list {
+            overflow: auto;
+            padding-right: 8px;
+            mask-image: linear-gradient(180deg, transparent 0%, #000 6%, #000 94%, transparent 100%);
+            -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 6%, #000 94%, transparent 100%);
+        }
+
+        .lyrics-list::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+
+        .lyric-line {
+            padding: 14px 16px;
+            border-radius: 18px;
+            margin-bottom: 10px;
+            color: var(--text-faint);
+            transition: transform 180ms ease, color 180ms ease, background 180ms ease;
+        }
+
+        .lyric-line.active {
+            color: var(--text-strong);
+            background: rgba(255, 255, 255, 0.08);
+            transform: translateX(8px);
+        }
+
+        .lyric-main {
+            font-size: 18px;
+            line-height: 1.3;
+        }
+
+        .lyric-trans {
+            margin-top: 6px;
+            font-size: 14px;
+            color: var(--text-soft);
+        }
+
+        .lyric-empty {
+            display: grid;
+            place-items: center;
+            min-height: 100%;
+            text-align: center;
+            font-size: 15px;
+        }
+
+        .spectrum-wrap {
+            position: fixed;
+            left: 28px;
+            right: 28px;
+            bottom: 20px;
+            height: 92px;
+            z-index: 3;
+            pointer-events: none;
+            opacity: 0.8;
+        }
+
+        #spectrum {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .settings-panel {
+            position: fixed;
+            top: 28px;
+            right: 28px;
+            width: min(320px, calc(100vw - 56px));
+            z-index: 4;
+            padding: 18px;
+            border-radius: 24px;
+            opacity: 0;
+            pointer-events: none;
+            transform: translateY(-10px);
+            transition: opacity 180ms ease, transform 180ms ease;
+        }
+
+        .settings-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.22);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 180ms ease;
+            z-index: 3;
+        }
+
+        .settings-overlay.open {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .settings-panel.open {
+            opacity: 1;
+            pointer-events: auto;
+            transform: translateY(0);
+        }
+
+        .settings-panel h2 {
+            margin: 0 0 6px;
+            font-size: 18px;
+        }
+
+        .settings-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+        }
+
+        .settings-close {
+            width: 34px;
+            height: 34px;
+            border-radius: 12px;
+            font-size: 16px;
+        }
+
+        .settings-panel p {
+            margin: 0 0 16px;
+            color: var(--text-soft);
+            font-size: 13px;
+        }
+
+        .setting-row {
+            justify-content: space-between;
+            gap: 16px;
+            padding: 12px 0;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .setting-label {
+            font-size: 14px;
+        }
+
+        .setting-value {
+            font-size: 12px;
+        }
+
+        .switch {
+            position: relative;
+            width: 46px;
+            height: 28px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch span {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.12);
+            transition: background 150ms ease;
+        }
+
+        .switch span::after {
+            content: "";
+            position: absolute;
+            top: 4px;
+            left: 4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #fff;
+            transition: transform 150ms ease;
+        }
+
+        .switch input:checked + span {
+            background: rgba(var(--accent-rgb), 0.36);
+        }
+
+        .switch input:checked + span::after {
+            transform: translateX(18px);
+        }
+
+        .range {
+            width: 128px;
+            accent-color: rgb(var(--accent-rgb));
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .mini-time-card,
+        .mini-lyrics-card {
+            display: none;
+        }
+
+        body.layout-compact .topbar,
+        body.layout-compact .lyrics-card,
+        body.layout-compact .status-note,
+        body.layout-compact .quick-chips,
+        body.layout-compact .neighbor-row {
+            display: none;
+        }
+
+        body.layout-compact .shell {
+            display: block;
+            padding: 0;
+        }
+
+        body.layout-compact .player-card {
+            position: fixed;
+            left: 60px;
+            top: 110px;
+            width: 430px;
+            padding: 20px;
+            gap: 16px;
+            border-radius: 30px;
+            z-index: 2;
+        }
+
+        body.layout-compact .cover-wrap {
+            width: 100%;
+            max-width: none;
+            border-radius: 22px;
+        }
+
+        body.layout-compact .song-name {
+            font-size: 28px;
+        }
+
+        body.layout-compact .song-meta {
+            font-size: 14px;
+            opacity: 0.88;
+        }
+
+        body.layout-compact .controls {
+            width: 100%;
+            justify-content: space-between;
+        }
+
+        body.layout-compact .control-btn {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            background: transparent;
+            font-size: 22px;
+        }
+
+        body.layout-compact .control-btn.primary {
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        body.layout-compact .toolbar {
+            justify-content: center;
+        }
+
+        body.layout-compact .mini-time-card,
+        body.layout-compact .mini-lyrics-card {
+            display: block;
+            position: fixed;
+            z-index: 2;
+            border-radius: 28px;
+            overflow: hidden;
+        }
+
+        body.layout-compact .mini-time-card {
+            left: 60px;
+            top: 780px;
+            width: 430px;
+            padding: 22px 26px;
+        }
+
+        body.layout-compact .mini-lyrics-card {
+            left: 540px;
+            right: 60px;
+            bottom: 64px;
+            min-height: 170px;
+            padding: 26px 34px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .mini-time-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            color: var(--text-soft);
+            font-size: 22px;
+        }
+
+        .mini-time-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .mini-time-main {
+            margin-top: 18px;
+            font-size: clamp(58px, 7vw, 88px);
+            font-variant-numeric: tabular-nums;
+            line-height: 0.95;
+            font-weight: 300;
+        }
+
+        .mini-time-sub {
+            margin-top: 8px;
+            font-size: 24px;
+            color: var(--text-soft);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+        }
+
+        .mini-lyrics-ruby {
+            font-size: 18px;
+            color: var(--text-soft);
+            letter-spacing: 0.28em;
+            margin-bottom: 6px;
+        }
+
+        .mini-lyrics-main {
+            font-size: clamp(34px, 4vw, 58px);
+            line-height: 1.15;
+            text-shadow: 0 6px 20px rgba(0, 0, 0, 0.18);
+            transition: opacity 240ms ease, transform 240ms ease, filter 240ms ease;
+        }
+
+        .mini-lyrics-sub {
+            margin-top: 10px;
+            font-size: 18px;
+            color: var(--text-soft);
+            transition: opacity 240ms ease, transform 240ms ease;
+        }
+
+        .mini-lyrics-card.animating .mini-lyrics-main,
+        .mini-lyrics-card.animating .mini-lyrics-sub,
+        .lyrics-now.animating .lyrics-now-main,
+        .lyrics-now.animating .lyrics-now-sub {
+            opacity: 0;
+            transform: translateY(14px);
+            filter: blur(8px);
+        }
+
+        .lyrics-now-main,
+        .lyrics-now-sub {
+            transition: opacity 240ms ease, transform 240ms ease, filter 240ms ease;
+        }
+
+        .mini-action-btn {
+            width: 42px;
+            height: 42px;
+            border-radius: 14px;
+            font-size: 16px;
+        }
+
+        @media (max-width: 1040px) {
+            .shell {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto 1fr;
+            }
+
+            .cover-wrap {
+                width: min(54vw, 280px);
+            }
+
+            .clock {
+                justify-content: flex-end;
+            }
+
+            .spectrum-wrap {
+                height: 64px;
+            }
+
+            body.layout-compact .player-card {
+                left: 24px;
+                top: 24px;
+                width: min(360px, calc(100vw - 48px));
+            }
+
+            body.layout-compact .mini-time-card {
+                left: 24px;
+                top: 700px;
+                width: min(360px, calc(100vw - 48px));
+            }
+
+            body.layout-compact .mini-lyrics-card {
+                left: 24px;
+                right: 24px;
+                bottom: 220px;
+                min-height: 120px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg">
+        <div class="bg-gradient"></div>
+        <div class="bg-cover active" id="bg-cover-a"></div>
+        <div class="bg-cover" id="bg-cover-b"></div>
+        <div class="bg-noise"></div>
+        <div class="bg-vignette"></div>
+        <div class="cursor-glow" id="cursor-glow"></div>
+    </div>
+
+    <main class="shell">
+        <section class="topbar glass">
+            <div class="brand">
+                <div class="badge" id="status-badge">待机中</div>
+                <h1>CloudMusic Wallpaper</h1>
+                <p id="status-text">等待本机 API 或网易云音乐播放状态。</p>
+            </div>
+            <div class="clock" id="clock-block">
+                <div>
+                    <div class="clock-main" id="clock-main">00:00</div>
+                    <p class="clock-sub" id="clock-sub">MON 2026.04.13</p>
+                </div>
+                <button class="icon-btn" id="settings-toggle" title="快捷设置">⚙</button>
+            </div>
+        </section>
+
+        <section class="player-card glass">
+            <div class="cover-wrap">
+                <img id="cover-image" alt="cover">
+                <div class="cover-fallback" id="cover-fallback">CloudMusic</div>
+            </div>
+
+            <div>
+                <h2 class="song-name" id="song-name">等待连接网易云音乐</h2>
+                <p class="song-meta" id="song-meta">打开 Python API 后，这里会显示当前歌曲与专辑信息。</p>
+            </div>
+
+            <div>
+                <div class="timebar">
+                    <span id="current-time">00:00</span>
+                    <span id="total-time">00:00</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-fill" id="progress-fill"></div>
+                </div>
+            </div>
+
+            <div class="toolbar">
+                <div class="controls">
+                    <button class="control-btn" data-action="prev" title="上一首">⏮</button>
+                    <button class="control-btn primary" data-action="playpause" title="播放 / 暂停">⏯</button>
+                    <button class="control-btn" data-action="next" title="下一首">⏭</button>
+                </div>
+            </div>
+
+            <div class="neighbor-row">
+                <div class="neighbor-card"><img id="prev-cover" alt="prev cover"></div>
+                <div class="neighbor-label" id="prev-label">上一首缓存</div>
+                <div class="neighbor-card"><img id="next-cover" alt="next cover"></div>
+                <div class="neighbor-label" id="next-label">下一首缓存</div>
+            </div>
+
+            <p class="status-note" id="player-note">待机态会显示自定义背景、时间和快捷设置。</p>
+        </section>
+
+        <section class="lyrics-card glass" id="lyrics-card">
+            <div class="lyrics-header">
+                <div class="lyrics-title">歌词</div>
+                <div class="setting-value" id="lyrics-meta">待机模式</div>
+            </div>
+            <div class="lyrics-now">
+                <div class="lyrics-now-main" id="lyrics-current">还没有正在播放的歌曲</div>
+                <div class="lyrics-now-sub" id="lyrics-current-sub">启动网易云音乐并播放后，这里会同步显示当前歌词。</div>
+            </div>
+            <div class="lyrics-list" id="lyrics-list">
+                <div class="lyric-empty">壁纸已就绪。<br>如果 API 暂时不可用，会自动切换到待机桌面。</div>
+            </div>
+        </section>
+    </main>
+
+    <section class="mini-time-card glass" id="mini-time-card">
+        <div class="mini-time-top">
+            <span>♪</span>
+            <div class="mini-time-actions">
+                <button class="icon-btn mini-action-btn" id="mini-play-toggle" title="播放 / 暂停">⏯</button>
+                <button class="icon-btn mini-action-btn" id="mini-lyrics-toggle" title="显示 / 隐藏歌词">CC</button>
+                <button class="icon-btn mini-action-btn" id="mini-settings-toggle" title="快捷设置">⚙</button>
+            </div>
+        </div>
+        <div class="mini-time-main" id="mini-clock-main">00:00</div>
+        <div class="mini-time-sub" id="mini-clock-sub">2026.04.13 MON</div>
+    </section>
+
+    <section class="mini-lyrics-card glass" id="mini-lyrics-card">
+        <div class="mini-lyrics-ruby" id="mini-lyrics-ruby">LYRICS</div>
+        <div class="mini-lyrics-main" id="mini-lyrics-main">还没有正在播放的歌曲</div>
+        <div class="mini-lyrics-sub" id="mini-lyrics-sub">启动网易云音乐并播放后，这里会同步显示当前歌词。</div>
+    </section>
+
+    <div class="spectrum-wrap" id="spectrum-wrap">
+        <canvas id="spectrum"></canvas>
+    </div>
+
+    <div class="settings-overlay" id="settings-overlay"></div>
+
+    <aside class="settings-panel glass" id="settings-panel">
+        <div class="settings-head">
+            <div>
+                <h2>快捷设置</h2>
+                <p>这些开关支持在网页里即时调试，也支持被 Wallpaper Engine 属性覆盖。</p>
+            </div>
+            <button class="icon-btn settings-close" id="settings-close" title="关闭设置">✕</button>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">参考图布局</div>
+                <div class="setting-value" id="layout-value">关闭</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="layout-switch">
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">显示时钟</div>
+                <div class="setting-value" id="clock-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="clock-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">显示歌词</div>
+                <div class="setting-value" id="lyrics-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="lyrics-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">歌词翻译</div>
+                <div class="setting-value" id="translation-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="translation-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">罗马音</div>
+                <div class="setting-value" id="roma-value">关闭</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="roma-switch">
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">逐字歌词</div>
+                <div class="setting-value" id="word-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="word-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">显示频谱</div>
+                <div class="setting-value" id="spectrum-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="spectrum-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">鼠标追踪</div>
+                <div class="setting-value" id="mouse-value">开启</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="mouse-switch" checked>
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">低性能模式</div>
+                <div class="setting-value" id="perf-value">关闭</div>
+            </div>
+            <label class="switch">
+                <input type="checkbox" id="perf-switch">
+                <span></span>
+            </label>
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">毛玻璃强度</div>
+                <div class="setting-value" id="blur-value">26</div>
+            </div>
+            <input class="range" id="blur-range" type="range" min="8" max="48" step="1" value="26">
+        </div>
+
+        <div class="setting-row">
+            <div>
+                <div class="setting-label">鼠标位移强度</div>
+                <div class="setting-value" id="mouse-strength-value">18</div>
+            </div>
+            <input class="range" id="mouse-range" type="range" min="0" max="36" step="1" value="18">
+        </div>
+    </aside>
+
+    <script>
+        const DEFAULTS = {
+            apiBase: "http://127.0.0.1:18726",
+            standbyImage: "",
+            compactLayout: false,
+            showClock: true,
+            showLyrics: true,
+            showSpectrum: true,
+            enableMouse: true,
+            lowPerf: false,
+            showRoma: false,
+            showTranslation: true,
+            showWordByWord: true,
+            blurStrength: 26,
+            mouseStrength: 18
+        };
+
+        const state = {
+            info: null,
+            lyricsPacket: null,
+            parsedLyrics: [],
+            activeIndex: -1,
+            currentSongId: 0,
+            apiOnline: false,
+            lastCoverUrl: "",
+            backgroundLayer: "a",
+            coverCache: {},
+            settings: { ...DEFAULTS }
+        };
+
+        const els = {
+            bgCoverA: document.getElementById("bg-cover-a"),
+            bgCoverB: document.getElementById("bg-cover-b"),
+            statusBadge: document.getElementById("status-badge"),
+            statusText: document.getElementById("status-text"),
+            clockBlock: document.getElementById("clock-block"),
+            clockMain: document.getElementById("clock-main"),
+            clockSub: document.getElementById("clock-sub"),
+            miniClockMain: document.getElementById("mini-clock-main"),
+            miniClockSub: document.getElementById("mini-clock-sub"),
+            settingsToggle: document.getElementById("settings-toggle"),
+            miniPlayToggle: document.getElementById("mini-play-toggle"),
+            miniLyricsToggle: document.getElementById("mini-lyrics-toggle"),
+            miniSettingsToggle: document.getElementById("mini-settings-toggle"),
+            settingsPanel: document.getElementById("settings-panel"),
+            settingsOverlay: document.getElementById("settings-overlay"),
+            settingsClose: document.getElementById("settings-close"),
+            coverImage: document.getElementById("cover-image"),
+            coverFallback: document.getElementById("cover-fallback"),
+            prevCover: document.getElementById("prev-cover"),
+            nextCover: document.getElementById("next-cover"),
+            prevLabel: document.getElementById("prev-label"),
+            nextLabel: document.getElementById("next-label"),
+            songName: document.getElementById("song-name"),
+            songMeta: document.getElementById("song-meta"),
+            currentTime: document.getElementById("current-time"),
+            totalTime: document.getElementById("total-time"),
+            progressFill: document.getElementById("progress-fill"),
+            playerNote: document.getElementById("player-note"),
+            lyricsCard: document.getElementById("lyrics-card"),
+            lyricsMeta: document.getElementById("lyrics-meta"),
+            lyricsNow: document.querySelector(".lyrics-now"),
+            lyricsCurrent: document.getElementById("lyrics-current"),
+            lyricsCurrentSub: document.getElementById("lyrics-current-sub"),
+            translationSwitch: document.getElementById("translation-switch"),
+            romaSwitch: document.getElementById("roma-switch"),
+            wordSwitch: document.getElementById("word-switch"),
+            miniLyricsRuby: document.getElementById("mini-lyrics-ruby"),
+            miniLyricsCard: document.getElementById("mini-lyrics-card"),
+            miniLyricsMain: document.getElementById("mini-lyrics-main"),
+            miniLyricsSub: document.getElementById("mini-lyrics-sub"),
+            lyricsList: document.getElementById("lyrics-list"),
+            spectrumWrap: document.getElementById("spectrum-wrap"),
+            spectrum: document.getElementById("spectrum"),
+            cursorGlow: document.getElementById("cursor-glow"),
+            layoutSwitch: document.getElementById("layout-switch"),
+            clockSwitch: document.getElementById("clock-switch"),
+            lyricsSwitch: document.getElementById("lyrics-switch"),
+            spectrumSwitch: document.getElementById("spectrum-switch"),
+            mouseSwitch: document.getElementById("mouse-switch"),
+            perfSwitch: document.getElementById("perf-switch"),
+            blurRange: document.getElementById("blur-range"),
+            mouseRange: document.getElementById("mouse-range"),
+            layoutValue: document.getElementById("layout-value"),
+            clockValue: document.getElementById("clock-value"),
+            lyricsValue: document.getElementById("lyrics-value"),
+            translationValue: document.getElementById("translation-value"),
+            romaValue: document.getElementById("roma-value"),
+            wordValue: document.getElementById("word-value"),
+            spectrumValue: document.getElementById("spectrum-value"),
+            mouseValue: document.getElementById("mouse-value"),
+            perfValue: document.getElementById("perf-value"),
+            blurValue: document.getElementById("blur-value"),
+            mouseStrengthValue: document.getElementById("mouse-strength-value")
+        };
+
+        const audioState = {
+            bins: new Array(64).fill(0),
+            smooth: new Array(64).fill(0)
+        };
+
+        const spectrumCtx = els.spectrum.getContext("2d");
+
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
+        }
+
+        function formatClockDate(date) {
+            const week = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+            const yyyy = date.getFullYear();
+            const mm = String(date.getMonth() + 1).padStart(2, "0");
+            const dd = String(date.getDate()).padStart(2, "0");
+            return `${week[date.getDay()]} ${yyyy}.${mm}.${dd}`;
+        }
+
+        function updateClock() {
+            const now = new Date();
+            const timeText = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+            const dateText = formatClockDate(now);
+            els.clockMain.textContent = timeText;
+            els.clockSub.textContent = dateText;
+            els.miniClockMain.textContent = timeText;
+            els.miniClockSub.textContent = dateText;
+        }
+
+        function setAccent(rgb) {
+            document.documentElement.style.setProperty("--accent-rgb", (rgb || [139, 214, 255]).join(", "));
+        }
+
+        function extractAccentFromSong(info) {
+            const name = info?.basic_info?.name || "";
+            const seed = [...name].reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+            return [
+                110 + (seed % 90),
+                140 + ((seed * 3) % 80),
+                180 + ((seed * 7) % 60)
+            ];
+        }
+
+        function setLayerImage(el, url) {
+            const standby = state.settings.standbyImage ? `url("${state.settings.standbyImage}")` : "none";
+            const cover = url ? `url("${url}")` : "none";
+            el.style.backgroundImage = `${cover}, ${standby}`;
+        }
+
+        function transitionBackground(coverUrl) {
+            const nextUrl = coverUrl || "";
+            if (state.lastCoverUrl === nextUrl) return;
+
+            const activeEl = state.backgroundLayer === "a" ? els.bgCoverA : els.bgCoverB;
+            const nextEl = state.backgroundLayer === "a" ? els.bgCoverB : els.bgCoverA;
+
+            setLayerImage(nextEl, nextUrl);
+            nextEl.classList.add("active");
+            activeEl.classList.remove("active");
+
+            state.backgroundLayer = state.backgroundLayer === "a" ? "b" : "a";
+            state.lastCoverUrl = nextUrl;
+        }
+
+        function updateNeighborCache(playback) {
+            const prevSong = playback?.prev_song || {};
+            const nextSong = playback?.next_song || {};
+
+            function updateNeighbor(imgEl, labelEl, song, fallbackText) {
+                const name = song?.name || fallbackText;
+                labelEl.textContent = name;
+                if (!song?.cover) {
+                    imgEl.classList.remove("ready");
+                    imgEl.removeAttribute("src");
+                    return;
+                }
+                if (!state.coverCache[song.cover]) {
+                    const preload = new Image();
+                    preload.src = song.cover;
+                    state.coverCache[song.cover] = preload;
+                }
+                imgEl.src = song.cover;
+                imgEl.classList.add("ready");
+            }
+
+            updateNeighbor(els.prevCover, els.prevLabel, prevSong, "上一首缓存");
+            updateNeighbor(els.nextCover, els.nextLabel, nextSong, "下一首缓存");
+        }
+
+        function applySettings() {
+            const root = document.documentElement;
+            const config = state.settings;
+            document.body.classList.toggle("layout-compact", config.compactLayout);
+            root.style.setProperty("--blur-strength", `${config.lowPerf ? Math.max(8, config.blurStrength - 12) : config.blurStrength}px`);
+            els.clockBlock.classList.toggle("hidden", !config.showClock);
+            els.lyricsCard.classList.toggle("hidden", !config.showLyrics);
+            els.spectrumWrap.classList.toggle("hidden", !config.showSpectrum);
+            els.cursorGlow.classList.toggle("hidden", !config.enableMouse || config.lowPerf);
+            if (!config.enableMouse) {
+                root.style.setProperty("--mouse-shift-x", "0px");
+                root.style.setProperty("--mouse-shift-y", "0px");
+            }
+
+            els.layoutSwitch.checked = config.compactLayout;
+            els.clockSwitch.checked = config.showClock;
+            els.lyricsSwitch.checked = config.showLyrics;
+            els.translationSwitch.checked = config.showTranslation;
+            els.romaSwitch.checked = config.showRoma;
+            els.wordSwitch.checked = config.showWordByWord;
+            els.spectrumSwitch.checked = config.showSpectrum;
+            els.mouseSwitch.checked = config.enableMouse;
+            els.perfSwitch.checked = config.lowPerf;
+            els.blurRange.value = config.blurStrength;
+            els.mouseRange.value = config.mouseStrength;
+            els.layoutValue.textContent = config.compactLayout ? "开启" : "关闭";
+            els.clockValue.textContent = config.showClock ? "开启" : "关闭";
+            els.lyricsValue.textContent = config.showLyrics ? "开启" : "关闭";
+            els.translationValue.textContent = config.showTranslation ? "开启" : "关闭";
+            els.romaValue.textContent = config.showRoma ? "开启" : "关闭";
+            els.wordValue.textContent = config.showWordByWord ? "开启" : "关闭";
+            els.spectrumValue.textContent = config.showSpectrum ? "开启" : "关闭";
+            els.mouseValue.textContent = config.enableMouse ? "开启" : "关闭";
+            els.perfValue.textContent = config.lowPerf ? "开启" : "关闭";
+            els.blurValue.textContent = String(config.blurStrength);
+            els.mouseStrengthValue.textContent = String(config.mouseStrength);
+            els.miniLyricsToggle.style.opacity = config.showLyrics ? "1" : "0.58";
+        }
+
+        function parseLrc(text) {
+            if (!text) return [];
+            const result = [];
+            const regex = /\[(\d+):(\d{2})(?:[\.:](\d+))?\](.*)/;
+            for (const line of text.split("\n")) {
+                const match = line.match(regex);
+                if (!match) continue;
+                const minute = parseInt(match[1], 10);
+                const second = parseInt(match[2], 10);
+                const fraction = match[3] || "0";
+                const content = match[4].trim();
+                if (!content) continue;
+                const millis = fraction.length === 2 ? parseInt(fraction, 10) / 100 : parseInt(fraction, 10) / Math.pow(10, fraction.length);
+                result.push({ time: minute * 60 + second + millis, text: content });
+            }
+            return result.sort((a, b) => a.time - b.time);
+        }
+
+        function parseYrc(text) {
+            if (!text) return [];
+            const result = [];
+            const lineRegex = /^\[(\d+),(\d+)\](.*)/;
+            const wordRegex = /\((\d+),(\d+),(\d+)\)([^\(]+)/g;
+
+            for (const rawLine of text.split("\n")) {
+                const match = rawLine.match(lineRegex);
+                if (!match) continue;
+                const startTime = Number(match[1]) / 1000;
+                const body = match[3];
+                const words = [];
+                let wordMatch;
+                let fullText = "";
+                while ((wordMatch = wordRegex.exec(body)) !== null) {
+                    const start = Number(wordMatch[1]) / 1000;
+                    const duration = Number(wordMatch[2]) / 1000;
+                    const textPart = wordMatch[4];
+                    fullText += textPart;
+                    words.push({
+                        time: start,
+                        duration,
+                        text: textPart
+                    });
+                }
+                if (fullText) {
+                    result.push({
+                        time: startTime,
+                        text: fullText,
+                        words
+                    });
+                }
+            }
+            return result;
+        }
+
+        function mergeLyrics(packet) {
+            const base = parseLrc(packet?.lrc || "");
+            const trans = parseLrc(packet?.tlyric || "");
+            const roma = parseLrc(packet?.romalrc || "");
+            const yrc = parseYrc(packet?.yrc || "");
+            return base.map((line) => {
+                const linked = trans.find((item) => Math.abs(item.time - line.time) < 0.25);
+                const romaLinked = roma.find((item) => Math.abs(item.time - line.time) < 0.25);
+                const yrcLinked = yrc.find((item) => Math.abs(item.time - line.time) < 0.4);
+                return {
+                    time: line.time,
+                    text: line.text,
+                    trans: linked ? linked.text : "",
+                    roma: romaLinked ? romaLinked.text : "",
+                    words: yrcLinked ? yrcLinked.words : []
+                };
+            });
+        }
+
+        function getDisplaySub(line) {
+            if (!line) return "";
+            if (state.settings.showRoma && line.roma) return line.roma;
+            if (state.settings.showTranslation && line.trans) return line.trans;
+            return "";
+        }
+
+        function getDisplayMain(line, currentSec) {
+            if (!line) return "";
+            if (!state.settings.showWordByWord || !line.words || !line.words.length) return line.text;
+
+            let assembled = "";
+            for (const word of line.words) {
+                if (currentSec >= word.time) assembled += word.text;
+            }
+            return assembled || line.text;
+        }
+
+        function animateLyricSwap(mainEl, subEl, cardEl, nextMain, nextSub) {
+            cardEl.classList.add("animating");
+            window.setTimeout(() => {
+                mainEl.textContent = nextMain || "";
+                subEl.textContent = nextSub || " ";
+                cardEl.classList.remove("animating");
+            }, 150);
+        }
+
+        function renderLyrics() {
+            const lines = state.parsedLyrics;
+            els.lyricsList.innerHTML = "";
+            if (!lines.length) {
+                els.lyricsList.innerHTML = '<div class="lyric-empty">当前歌曲没有可用歌词，或者 API 仍在同步中。</div>';
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            lines.forEach((line, index) => {
+                const item = document.createElement("div");
+                item.className = "lyric-line";
+                item.dataset.index = String(index);
+
+                const main = document.createElement("div");
+                main.className = "lyric-main";
+                main.textContent = line.text;
+                item.appendChild(main);
+
+                const subText = getDisplaySub(line);
+                if (subText) {
+                    const sub = document.createElement("div");
+                    sub.className = "lyric-trans";
+                    sub.textContent = subText;
+                    item.appendChild(sub);
+                }
+
+                fragment.appendChild(item);
+            });
+            els.lyricsList.appendChild(fragment);
+        }
+
+        function syncLyrics(currentSec) {
+            if (!state.parsedLyrics.length) return;
+            let nextIndex = -1;
+            for (let i = state.parsedLyrics.length - 1; i >= 0; i -= 1) {
+                if (currentSec >= state.parsedLyrics[i].time) {
+                    nextIndex = i;
+                    break;
+                }
+            }
+            if (nextIndex === state.activeIndex) {
+                const currentLine = state.parsedLyrics[nextIndex];
+                if (currentLine && state.settings.showWordByWord && currentLine.words && currentLine.words.length) {
+                    const dynamicMain = getDisplayMain(currentLine, currentSec);
+                    els.lyricsCurrent.textContent = dynamicMain;
+                    els.miniLyricsMain.textContent = dynamicMain;
+                }
+                return;
+            }
+
+            const prev = els.lyricsList.querySelector(".lyric-line.active");
+            if (prev) prev.classList.remove("active");
+            state.activeIndex = nextIndex;
+
+            if (nextIndex < 0) return;
+
+            const active = els.lyricsList.querySelector(`.lyric-line[data-index="${nextIndex}"]`);
+            const line = state.parsedLyrics[nextIndex];
+            if (!active || !line) return;
+
+            active.classList.add("active");
+            const mainText = getDisplayMain(line, currentSec);
+            const subText = getDisplaySub(line) || els.songMeta.textContent;
+            animateLyricSwap(els.lyricsCurrent, els.lyricsCurrentSub, els.lyricsNow, mainText, subText);
+            animateLyricSwap(els.miniLyricsMain, els.miniLyricsSub, els.miniLyricsCard, mainText, subText);
+
+            const targetTop = active.offsetTop - els.lyricsList.clientHeight / 2 + active.clientHeight;
+            els.lyricsList.scrollTo({ top: Math.max(targetTop, 0), behavior: "smooth" });
+        }
+
+        function setStandbyUI(message) {
+            state.apiOnline = false;
+            state.currentSongId = 0;
+            state.parsedLyrics = [];
+            state.activeIndex = -1;
+            transitionBackground("");
+            setAccent([139, 214, 255]);
+            els.coverImage.removeAttribute("src");
+            els.coverFallback.style.display = "grid";
+            els.prevCover.classList.remove("ready");
+            els.prevCover.removeAttribute("src");
+            els.nextCover.classList.remove("ready");
+            els.nextCover.removeAttribute("src");
+            els.prevLabel.textContent = "上一首缓存";
+            els.nextLabel.textContent = "下一首缓存";
+            els.songName.textContent = "等待连接网易云音乐";
+            els.songMeta.textContent = "打开 Python API 后，这里会显示当前歌曲与专辑信息。";
+            els.currentTime.textContent = "00:00";
+            els.totalTime.textContent = "00:00";
+            els.progressFill.style.width = "0%";
+            els.statusBadge.textContent = "待机中";
+            els.statusText.textContent = message || "API 离线或网易云未播放，当前显示自定义待机背景与时钟。";
+            els.playerNote.textContent = "你可以在 Wallpaper Engine 属性里配置待机背景图、模糊强度和鼠标追踪。";
+            els.lyricsMeta.textContent = "待机模式";
+            els.lyricsCurrent.textContent = "还没有正在播放的歌曲";
+            els.lyricsCurrentSub.textContent = "启动网易云音乐并播放后，这里会同步显示当前歌词。";
+            els.miniLyricsRuby.textContent = "STANDBY";
+            els.miniLyricsMain.textContent = "还没有正在播放的歌曲";
+            els.miniLyricsSub.textContent = "启动网易云音乐并播放后，这里会同步显示当前歌词。";
+            renderLyrics();
+        }
+
+        function renderInfo(info) {
+            const basic = info?.basic_info || {};
+            const playback = info?.playback || {};
+            const hasSong = Boolean(info?.process_active && basic?.id);
+            const coverUrl = basic.cover_url || "";
+
+            state.info = info;
+            state.apiOnline = Boolean(info?.process_active);
+            transitionBackground(coverUrl);
+            setAccent(extractAccentFromSong(info));
+
+            if (!hasSong) {
+                setStandbyUI("API 在线，但当前没有检测到可播放歌曲。");
+                return;
+            }
+
+            els.statusBadge.textContent = info.playing ? "正在播放" : "已连接";
+            els.statusText.textContent = "Python API 已连接，壁纸正在读取本机播放信息。";
+            els.songName.textContent = basic.name || "未知歌曲";
+            els.songMeta.textContent = `${basic.artist || "未知歌手"} · ${basic.album || "未知专辑"}`;
+            els.currentTime.textContent = playback.formatted_current || "00:00";
+            els.totalTime.textContent = playback.formatted_total || "00:00";
+            els.progressFill.style.width = `${clamp(Number(playback.percentage) || 0, 0, 100)}%`;
+            els.playerNote.textContent = `播放模式：${playback.play_mode || "list"} · 桌面控件可直接控制网易云播放。`;
+            els.lyricsMeta.textContent = basic.name || "歌词";
+            els.miniLyricsRuby.textContent = basic.artist || "LYRICS";
+            els.miniLyricsMain.textContent = info?.lyrics?.current_line || basic.name || "歌词同步中...";
+            els.miniLyricsSub.textContent = (state.settings.showTranslation ? info?.lyrics?.current_trans : "") || `${playback.formatted_current || "00:00"} / ${playback.formatted_total || "00:00"}`;
+            updateNeighborCache(playback);
+
+            if (coverUrl) {
+                els.coverImage.src = coverUrl;
+                els.coverFallback.style.display = "none";
+            } else {
+                els.coverImage.removeAttribute("src");
+                els.coverFallback.style.display = "grid";
+            }
+
+            if (basic.id !== state.currentSongId) {
+                state.currentSongId = basic.id;
+                fetchLyrics();
+            }
+
+            els.lyricsCurrent.textContent = info?.lyrics?.current_line || "歌词同步中...";
+            els.lyricsCurrentSub.textContent = state.settings.showTranslation ? (info?.lyrics?.current_trans || " ") : " ";
+            syncLyrics(Number(playback.current_sec) || 0);
+        }
+
+        async function fetchInfo() {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1800);
+            try {
+                const response = await fetch(`${state.settings.apiBase}/info?t=${Date.now()}`, {
+                    mode: "cors",
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                if (!response.ok) throw new Error(`info ${response.status}`);
+                const data = await response.json();
+                renderInfo(data);
+            } catch (error) {
+                clearTimeout(timeoutId);
+                setStandbyUI();
+            }
+        }
+
+        async function fetchLyrics() {
+            if (!state.currentSongId) return;
+            try {
+                const response = await fetch(`${state.settings.apiBase}/lyrics?t=${Date.now()}`, { mode: "cors" });
+                if (!response.ok) throw new Error(`lyrics ${response.status}`);
+                const data = await response.json();
+                if (data.id !== state.currentSongId) return;
+                state.lyricsPacket = data;
+                state.parsedLyrics = mergeLyrics(data);
+                state.activeIndex = -1;
+                renderLyrics();
+                syncLyrics(Number(state.info?.playback?.current_sec) || 0);
+            } catch (error) {
+                state.parsedLyrics = [];
+                renderLyrics();
+            }
+        }
+
+        async function control(action) {
+            try {
+                await fetch(`${state.settings.apiBase}/control/${action}`, {
+                    method: "POST",
+                    mode: "cors"
+                });
+            } catch (error) {
+                // 静默失败。
+            }
+        }
+
+        function resizeSpectrum() {
+            const ratio = window.devicePixelRatio || 1;
+            const width = els.spectrum.clientWidth;
+            const height = els.spectrum.clientHeight;
+            els.spectrum.width = Math.floor(width * ratio);
+            els.spectrum.height = Math.floor(height * ratio);
+            spectrumCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        }
+
+        function drawSpectrum() {
+            requestAnimationFrame(drawSpectrum);
+            if (!state.settings.showSpectrum) return;
+
+            const width = els.spectrum.clientWidth;
+            const height = els.spectrum.clientHeight;
+            spectrumCtx.clearRect(0, 0, width, height);
+
+            const bars = audioState.bins.length;
+            const gap = 4;
+            const barWidth = Math.max(3, (width - gap * (bars - 1)) / bars);
+
+            for (let i = 0; i < bars; i += 1) {
+                audioState.smooth[i] += (audioState.bins[i] - audioState.smooth[i]) * 0.22;
+                const value = clamp(audioState.smooth[i], 0, 1);
+                const barHeight = Math.max(3, value * height);
+                const x = i * (barWidth + gap);
+                const y = height - barHeight;
+                const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent-rgb");
+                const alpha = 0.18 + value * 0.72;
+                spectrumCtx.fillStyle = `rgba(${accent}, ${alpha})`;
+                spectrumCtx.fillRect(x, y, barWidth, barHeight);
+            }
+        }
+
+        function bindWallpaperAudio() {
+            if (typeof window.wallpaperRegisterAudioListener !== "function") return;
+            window.wallpaperRegisterAudioListener((samples) => {
+                if (!samples || !samples.length) return;
+                const bins = [];
+                const step = Math.max(1, Math.floor(samples.length / 64));
+                for (let i = 0; i < 64; i += 1) {
+                    let sum = 0;
+                    for (let j = 0; j < step; j += 1) {
+                        sum += samples[i * step + j] || 0;
+                    }
+                    bins.push(clamp((sum / step) * 1.8, 0, 1));
+                }
+                audioState.bins = bins;
+            });
+        }
+
+        function bindMouse() {
+            window.addEventListener("mousemove", (event) => {
+                document.documentElement.style.setProperty("--mouse-x", `${event.clientX}px`);
+                document.documentElement.style.setProperty("--mouse-y", `${event.clientY}px`);
+                if (!state.settings.enableMouse || state.settings.lowPerf) return;
+                const strength = state.settings.mouseStrength;
+                const shiftX = ((event.clientX / window.innerWidth) - 0.5) * strength * 2;
+                const shiftY = ((event.clientY / window.innerHeight) - 0.5) * strength * 2;
+                document.documentElement.style.setProperty("--mouse-shift-x", `${shiftX.toFixed(2)}px`);
+                document.documentElement.style.setProperty("--mouse-shift-y", `${shiftY.toFixed(2)}px`);
+            });
+        }
+
+        function parseHexColor(input) {
+            if (!input) return null;
+            let hex = String(input).trim().replace("#", "");
+            if (hex.length === 3) {
+                hex = hex.split("").map((char) => char + char).join("");
+            }
+            if (!/^[0-9a-fA-F]{6}$/.test(hex)) return null;
+            return [
+                parseInt(hex.slice(0, 2), 16),
+                parseInt(hex.slice(2, 4), 16),
+                parseInt(hex.slice(4, 6), 16)
+            ];
+        }
+
+        function readFileProperty(value) {
+            if (!value) return "";
+            if (typeof value === "string") return value;
+            if (typeof value === "object" && value.value) return value.value;
+            return "";
+        }
+
+        function applyWallpaperProperties(properties) {
+            if (!properties) return;
+            if (properties.apibase?.value) state.settings.apiBase = properties.apibase.value;
+            if (properties.standbybg) state.settings.standbyImage = readFileProperty(properties.standbybg);
+            if (properties.compactlayout) state.settings.compactLayout = properties.compactlayout.value;
+            if (properties.showclock) state.settings.showClock = properties.showclock.value;
+            if (properties.showlyrics) state.settings.showLyrics = properties.showlyrics.value;
+            if (properties.showtranslation) state.settings.showTranslation = properties.showtranslation.value;
+            if (properties.showroma) state.settings.showRoma = properties.showroma.value;
+            if (properties.showwordbyword) state.settings.showWordByWord = properties.showwordbyword.value;
+            if (properties.showspectrum) state.settings.showSpectrum = properties.showspectrum.value;
+            if (properties.enablemouse) state.settings.enableMouse = properties.enablemouse.value;
+            if (properties.lowperf) state.settings.lowPerf = properties.lowperf.value;
+            if (properties.blurstrength?.value != null) state.settings.blurStrength = Number(properties.blurstrength.value);
+            if (properties.mousestrength?.value != null) state.settings.mouseStrength = Number(properties.mousestrength.value);
+            if (properties.themecolor?.value) {
+                const rgb = parseHexColor(properties.themecolor.value);
+                if (rgb) setAccent(rgb);
+            }
+
+            applySettings();
+            transitionBackground(state.info?.basic_info?.cover_url || "");
+        }
+
+        function bindWallpaperPropertyListener() {
+            window.wallpaperPropertyListener = {
+                applyUserProperties: applyWallpaperProperties
+            };
+        }
+
+        function bindUI() {
+            function openSettings() {
+                els.settingsPanel.classList.add("open");
+                els.settingsOverlay.classList.add("open");
+            }
+
+            function closeSettings() {
+                els.settingsPanel.classList.remove("open");
+                els.settingsOverlay.classList.remove("open");
+            }
+
+            function toggleSettings() {
+                const willOpen = !els.settingsPanel.classList.contains("open");
+                if (willOpen) openSettings();
+                else closeSettings();
+            }
+
+            els.settingsToggle.addEventListener("click", toggleSettings);
+            els.miniSettingsToggle.addEventListener("click", toggleSettings);
+            els.miniPlayToggle.addEventListener("click", () => control("playpause"));
+            els.miniLyricsToggle.addEventListener("click", () => {
+                state.settings.showLyrics = !state.settings.showLyrics;
+                applySettings();
+            });
+            els.settingsOverlay.addEventListener("click", closeSettings);
+            els.settingsClose.addEventListener("click", closeSettings);
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape") closeSettings();
+            });
+
+            document.addEventListener("click", (event) => {
+                const actionTarget = event.target.closest("[data-action]");
+                if (actionTarget) {
+                    control(actionTarget.dataset.action);
+                    return;
+                }
+            });
+
+            els.layoutSwitch.addEventListener("change", (event) => {
+                state.settings.compactLayout = event.target.checked;
+                applySettings();
+            });
+            els.clockSwitch.addEventListener("change", (event) => {
+                state.settings.showClock = event.target.checked;
+                applySettings();
+            });
+            els.lyricsSwitch.addEventListener("change", (event) => {
+                state.settings.showLyrics = event.target.checked;
+                applySettings();
+            });
+            els.translationSwitch.addEventListener("change", (event) => {
+                state.settings.showTranslation = event.target.checked;
+                renderLyrics();
+                syncLyrics(Number(state.info?.playback?.current_sec) || 0);
+                applySettings();
+            });
+            els.romaSwitch.addEventListener("change", (event) => {
+                state.settings.showRoma = event.target.checked;
+                renderLyrics();
+                syncLyrics(Number(state.info?.playback?.current_sec) || 0);
+                applySettings();
+            });
+            els.wordSwitch.addEventListener("change", (event) => {
+                state.settings.showWordByWord = event.target.checked;
+                renderLyrics();
+                syncLyrics(Number(state.info?.playback?.current_sec) || 0);
+                applySettings();
+            });
+            els.spectrumSwitch.addEventListener("change", (event) => {
+                state.settings.showSpectrum = event.target.checked;
+                applySettings();
+            });
+            els.mouseSwitch.addEventListener("change", (event) => {
+                state.settings.enableMouse = event.target.checked;
+                applySettings();
+            });
+            els.perfSwitch.addEventListener("change", (event) => {
+                state.settings.lowPerf = event.target.checked;
+                applySettings();
+            });
+            els.blurRange.addEventListener("input", (event) => {
+                state.settings.blurStrength = Number(event.target.value);
+                applySettings();
+            });
+            els.mouseRange.addEventListener("input", (event) => {
+                state.settings.mouseStrength = Number(event.target.value);
+                applySettings();
+            });
+
+            window.addEventListener("resize", resizeSpectrum);
+        }
+
+        function init() {
+            bindWallpaperPropertyListener();
+            bindWallpaperAudio();
+            bindMouse();
+            bindUI();
+            updateClock();
+            setInterval(updateClock, 1000);
+            resizeSpectrum();
+            drawSpectrum();
+            applySettings();
+            setStandbyUI();
+            fetchInfo();
+            setInterval(fetchInfo, 1000);
+        }
+
+        init();
+    </script>
+</body>
+</html>
