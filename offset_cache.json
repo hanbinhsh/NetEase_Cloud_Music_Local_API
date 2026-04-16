@@ -1,0 +1,34 @@
+{
+  "entries": {
+    "cloudmusic.dll|img=37257216|file=33948160|mtime=1775653816": {
+      "ptr_static_offset": 32097584,
+      "ptr_offsets": [
+        16,
+        0,
+        16,
+        104,
+        0
+      ],
+      "off_curr": 31705392,
+      "off_total": 32100920,
+      "source": "manual_override",
+      "fingerprint": "cloudmusic.dll|img=37257216|file=33948160|mtime=1775653816",
+      "validated_at": 1776336757
+    }
+  },
+  "manual_override": {
+    "ptr_static_offset": 32097584,
+    "ptr_offsets": [
+      16,
+      0,
+      16,
+      104,
+      0
+    ],
+    "off_curr": 31705392,
+    "off_total": 32100920,
+    "source": "manual_override",
+    "fingerprint": "cloudmusic.dll|img=37257216|file=33948160|mtime=1775653816",
+    "validated_at": 1776336751
+  }
+}
