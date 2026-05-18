@@ -1183,11 +1183,11 @@ class NeteaseV3Service:
 
         try:
             # 1. 处理单曲循环
-            if mode == "single":
-                curr_item = next((item for item in raw_list if str(item.get('id')) == str(current_id)), None)
-                if curr_item:
-                    song = self._format_neighbor(curr_item)
-                    return song, song
+            # if mode == "single":
+            #     curr_item = next((item for item in raw_list if str(item.get('id')) == str(current_id)), None)
+            #     if curr_item:
+            #         song = self._format_neighbor(curr_item)
+            #         return song, song
 
             # 2. 确定排序逻辑：随机模式用 randomOrder，其余用 displayOrder
             sort_key = 'randomOrder' if mode == 'random' else 'displayOrder'
