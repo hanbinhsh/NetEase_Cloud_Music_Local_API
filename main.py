@@ -1250,7 +1250,7 @@ class LyricService:
         
         # 【关键修改】正则兼容冒号和点号作为毫秒分隔符
         # 匹配: [00:00] 或 [00:00.00] 或 [00:00:00]
-        pattern = re.compile(r'\[(\d{2}):(\d{2})(?:[\.:](\d+))?\](.*)')
+        pattern = re.compile(r'\[(\d+):(\d{2})(?:[\.:](\d+))?(?:[^\]]*)\](.*)')
         
         for line in lrc_content.split('\n'):
             match = pattern.search(line)

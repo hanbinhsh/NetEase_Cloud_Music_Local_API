@@ -863,6 +863,8 @@
         let lyricsData = []; 
         let lastActiveIndex = -1;
         let isFetchingLyrics = false;
+        let hasFetchedLyrics = false;
+        let lyricsRetryCount = 0;
         let songHistory = []; // 保存歌曲历史用于判断方向
 
         let lastServerTime = 0; 
@@ -1349,6 +1351,8 @@
                     
                     // 重要：先更新currentSongId，即使后续操作失败也不会无限循环
                     currentSongId = info.id;
+                    hasFetchedLyrics = false;
+                    lyricsRetryCount = 0;
                     
                     // 切换封面和背景（带方向感知的动画）- 不等待完成
                     try {
@@ -1363,7 +1367,7 @@
                     elLyricsBox.innerHTML = '<div class="lrc-line loading-shimmer" style="text-align:center; opacity:0.5;">正在加载歌词...</div>';
                     
                     fetchLyrics();
-                } else if (lyricsData.length === 0 && !isFetchingLyrics) {
+                } else if (!hasFetchedLyrics && !isFetchingLyrics) {
                     fetchLyrics();
                 }
             }
@@ -1467,12 +1471,26 @@
             try {
                 const response = await fetch(`${BASE_URL}/lyrics?t=${Date.now()}`);
                 const data = await response.json();
+                
+                // 如果在请求期间已经切了别的歌，直接废弃本次结果
                 if (data.id !== currentSongId) return;
+                
                 if (data.hasLyric || data.hasYrc) {
+                    // 成功获取到有效歌词，彻底标记完成
+                    hasFetchedLyrics = true; 
                     const parsed = parseAndMergeAll(data);
                     renderLyrics(parsed);
                 } else { 
-                    renderLyrics([]); 
+                    // 当前为空，可能是后端还在请求网易云接口（时间差导致）
+                    if (lyricsRetryCount < 10) {
+                        // 还没有超过 10 次（约 5 秒），增加计数，继续保持 "正在加载歌词..." 状态
+                        // 下个 500ms 周期 updatePlaybackUI 会再次触发此函数
+                        lyricsRetryCount++; 
+                    } else {
+                        // 已经等了足够久依然为空，确信这是一首纯音乐/无歌词歌曲
+                        hasFetchedLyrics = true;
+                        renderLyrics([]); 
+                    }
                 }
             } catch (e) { 
                 console.error(e); 
@@ -1486,7 +1504,7 @@
             const lines = text.split('\n');
             const result = {};
             // 修改了这里：将 (\d{2}) 改为 (\d+) 以匹配 [0:00.123] 这种一位数分钟的情况
-            const regex = /\[(\d+):(\d{2})(?:[\.:](\d+))?\](.*)/;
+            const regex = /\[(\d+):(\d{2})(?:[\.:](\d+))?(?:[^\]]*)\](.*)/;
             
             lines.forEach(line => {
                 const match = line.match(regex);
