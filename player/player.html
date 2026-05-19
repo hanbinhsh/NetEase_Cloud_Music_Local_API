@@ -1580,10 +1580,20 @@
                 const t = parseFloat(tStr);
                 const text = lrcMap[tStr];
                 const findInMap = (map) => {
+                    // 1. 优先尝试精确匹配（绝大部分网易云歌词都是完全对应的）
+                    if (map[tStr] !== undefined) return map[tStr];
+                    
+                    // 2. 如果没有精确匹配，寻找误差在 0.05 秒（50毫秒）以内的项
+                    let closestKey = null;
+                    let minDiff = 0.05; 
                     for (const k in map) {
-                        if (Math.abs(parseFloat(k) - t) < 0.2) return map[k];
+                        const diff = Math.abs(parseFloat(k) - t);
+                        if (diff < minDiff) {
+                            minDiff = diff;
+                            closestKey = k;
+                        }
                     }
-                    return "";
+                    return closestKey ? map[closestKey] : "";
                 };
                 return {
                     time: t,
