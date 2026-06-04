@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import pymem
+import pymem.memory
 import pymem.process
 import time
 import requests
@@ -186,7 +187,11 @@ class CloudMusicOffsetResolver:
                 result["layout"] = {
                     "ptr_static_offset": self.current_layout.get("ptr_static_offset"),
                     "off_curr": self.current_layout.get("off_curr"),
-                    "off_total": self.current_layout.get("off_total")
+                    "off_total": self.current_layout.get("off_total"),
+                    "off_curr_ref": self.current_layout.get("off_curr_ref", "module"),
+                    "off_curr_module": self.current_layout.get("off_curr_module", "cloudmusic.dll"),
+                    "off_total_ref": self.current_layout.get("off_total_ref", "module"),
+                    "off_total_module": self.current_layout.get("off_total_module", "cloudmusic.dll")
                 }
             return result
 
@@ -219,6 +224,10 @@ class CloudMusicOffsetResolver:
             "ptr_offsets": list(self.POINTER_OFFSETS),
             "off_curr": int(layout["off_curr"]),
             "off_total": off_total,
+            "off_curr_ref": layout.get("off_curr_ref", "module"),
+            "off_curr_module": layout.get("off_curr_module", "cloudmusic.dll"),
+            "off_total_ref": layout.get("off_total_ref", "module"),
+            "off_total_module": layout.get("off_total_module", "cloudmusic.dll"),
             "source": source,
             "fingerprint": fingerprint,
             "validated_at": int(time.time())
@@ -241,7 +250,17 @@ class CloudMusicOffsetResolver:
         self.cache.setdefault("entries", {})[fingerprint] = normalized
         self._save_cache()
 
-    def apply_manual_layout(self, off_curr, off_total, ptr_static_offset=None, fingerprint="manual-entry"):
+    def apply_manual_layout(
+        self,
+        off_curr,
+        off_total,
+        ptr_static_offset=None,
+        fingerprint="manual-entry",
+        off_curr_ref="module",
+        off_curr_module="cloudmusic.dll",
+        off_total_ref="module",
+        off_total_module="cloudmusic.dll"
+    ):
         off_curr = int(off_curr)
         off_total = int(off_total)
         if ptr_static_offset is None:
@@ -251,7 +270,11 @@ class CloudMusicOffsetResolver:
             {
                 "ptr_static_offset": int(ptr_static_offset),
                 "off_curr": off_curr,
-                "off_total": off_total
+                "off_total": off_total,
+                "off_curr_ref": off_curr_ref,
+                "off_curr_module": off_curr_module,
+                "off_total_ref": off_total_ref,
+                "off_total_module": off_total_module
             },
             "manual_override",
             fingerprint
@@ -266,6 +289,28 @@ class CloudMusicOffsetResolver:
 
     def get_cache_path(self):
         return self.cache_path
+
+    def resolve_value_address(self, pm, default_module, layout, key):
+        value = int(layout[key])
+        ref_key = f"{key}_ref"
+        module_key = f"{key}_module"
+
+        if layout.get(ref_key) == "absolute":
+            return value
+
+        module_name = layout.get(module_key, "cloudmusic.dll")
+        if module_name and module_name.lower() != "cloudmusic.dll":
+            try:
+                module = pymem.process.module_from_name(pm.process_handle, module_name)
+                if module:
+                    return int(module.lpBaseOfDll) + value
+            except Exception:
+                pass
+
+        return int(default_module.lpBaseOfDll) + value
+
+    def _read_layout_double(self, pm, default_module, layout, key):
+        return MemoryUtils.read_double_safe(pm, self.resolve_value_address(pm, default_module, layout, key))
 
     def _sample_progress(self, pm, base_addr, off_curr, off_total, sample_count=4, interval=0.05):
         current_values = []
@@ -313,6 +358,51 @@ class CloudMusicOffsetResolver:
             "score": score
         }
 
+    def _sample_layout_progress(self, pm, default_module, layout, sample_count=4, interval=0.05):
+        current_values = []
+        total_values = []
+
+        for idx in range(sample_count):
+            ct = self._read_layout_double(pm, default_module, layout, "off_curr")
+            tt = self._read_layout_double(pm, default_module, layout, "off_total")
+            if ct is None or tt is None:
+                return None
+            current_values.append(ct)
+            total_values.append(tt)
+            if idx != sample_count - 1:
+                time.sleep(interval)
+
+        tt_min = min(total_values)
+        tt_max = max(total_values)
+        ct_min = min(current_values)
+        ct_max = max(current_values)
+        total_span = tt_max - tt_min
+        current_delta = current_values[-1] - current_values[0]
+
+        valid = (
+            tt_max > 0.5 and
+            ct_min >= -0.5 and
+            total_span < 0.75 and
+            current_values[-1] <= total_values[-1] + 3.0
+        )
+        if not valid:
+            return None
+
+        score = 100.0
+        score -= min(total_span, 1.0) * 25.0
+        if current_delta >= 0:
+            score += min(current_delta, 0.5) * 20.0
+        else:
+            score -= min(abs(current_delta), 0.5) * 40.0
+        if ct_max > tt_max + 1.0:
+            score -= 40.0
+
+        return {
+            "current": current_values[-1],
+            "total": total_values[-1],
+            "score": score
+        }
+
     def is_runtime_progress_valid(self, current_sec, total_sec):
         if current_sec is None or total_sec is None:
             return False
@@ -337,10 +427,15 @@ class CloudMusicOffsetResolver:
             return song_id
         return None
 
-    def _validate_layout(self, pm, base_addr, layout):
+    def _validate_layout(self, pm, module_or_base, layout):
+        default_module = module_or_base if hasattr(module_or_base, "lpBaseOfDll") else None
+        base_addr = int(default_module.lpBaseOfDll) if default_module else int(module_or_base)
         ptr_static_offset = int(layout.get("ptr_static_offset", int(layout["off_total"]) - self.TOTAL_PTR_DELTA))
         pointer_id = self._validate_pointer(pm, base_addr, ptr_static_offset)
-        progress = self._sample_progress(pm, base_addr, int(layout["off_curr"]), int(layout["off_total"]))
+        if default_module:
+            progress = self._sample_layout_progress(pm, default_module, layout)
+        else:
+            progress = self._sample_progress(pm, base_addr, int(layout["off_curr"]), int(layout["off_total"]))
         if not progress and not pointer_id:
             return None
 
@@ -349,7 +444,11 @@ class CloudMusicOffsetResolver:
                 {
                     "ptr_static_offset": ptr_static_offset,
                     "off_curr": int(layout["off_curr"]),
-                    "off_total": int(layout["off_total"])
+                    "off_total": int(layout["off_total"]),
+                    "off_curr_ref": layout.get("off_curr_ref", "module"),
+                    "off_curr_module": layout.get("off_curr_module", "cloudmusic.dll"),
+                    "off_total_ref": layout.get("off_total_ref", "module"),
+                    "off_total_module": layout.get("off_total_module", "cloudmusic.dll")
                 },
                 layout.get("source", "candidate"),
                 layout.get("fingerprint", "")
@@ -498,7 +597,7 @@ class CloudMusicOffsetResolver:
 
         if not force_rescan:
             for layout in self._iter_candidate_layouts(fingerprint):
-                validated = self._validate_layout(pm, base_addr, layout)
+                validated = self._validate_layout(pm, module, layout)
                 if not validated:
                     continue
                 if validated["strong"]:
@@ -527,12 +626,18 @@ class CloudMusicOffsetResolver:
         return fallback
 
 class GuidedOffsetScanner:
+    READABLE_PROTECTIONS = {0x02, 0x04, 0x08, 0x20, 0x40, 0x80}
+    PAGE_GUARD = 0x100
+    PAGE_NOACCESS = 0x01
+    MEM_COMMIT = 0x1000
+
     def __init__(self, locator):
         self.locator = locator
         self.pm = None
         self.module = None
         self.base_addr = None
         self.image_size = 0
+        self.modules = []
         self.current_candidates = []
         self.total_candidates = []
         self.id_candidates = []
@@ -542,6 +647,7 @@ class GuidedOffsetScanner:
         self.module = pymem.process.module_from_name(self.pm.process_handle, "cloudmusic.dll")
         self.base_addr = int(self.module.lpBaseOfDll)
         self.image_size = int(getattr(self.module, "SizeOfImage", 0) or 0)
+        self._refresh_modules()
         return {
             "base_addr": self.base_addr,
             "image_size": self.image_size,
@@ -557,33 +663,162 @@ class GuidedOffsetScanner:
             "fingerprint": self.locator.build_fingerprint(self.module)
         }
 
-    def _scan_block_for_range(self, min_value, max_value):
-        self.ensure_attached()
-        block = self.pm.read_bytes(self.base_addr, self.image_size)
-        results = []
+    def _refresh_modules(self):
+        modules = []
+        try:
+            for module in pymem.process.enum_process_module(self.pm.process_handle):
+                base = int(module.lpBaseOfDll)
+                size = int(getattr(module, "SizeOfImage", 0) or 0)
+                if size <= 0:
+                    continue
+                modules.append({
+                    "name": module.name,
+                    "base": base,
+                    "end": base + size
+                })
+        except Exception:
+            pass
+        self.modules = sorted(modules, key=lambda item: item["base"])
 
-        for offset in range(0, len(block) - 8, 8):
-            value = struct.unpack_from("<d", block, offset)[0]
+    def describe_address(self, address):
+        address = int(address)
+        for module in self.modules:
+            if module["base"] <= address < module["end"]:
+                return {
+                    "expr": f"{module['name']}+0x{address - module['base']:X}",
+                    "rva": address - module["base"],
+                    "module": module["name"],
+                    "ref": "module"
+                }
+        return {
+            "expr": f"abs:0x{address:X}",
+            "rva": address,
+            "module": "",
+            "ref": "absolute"
+        }
+
+    def _iter_readable_regions(self):
+        self.ensure_attached()
+        address = 0
+        max_address = 0x7FFFFFFFFFFF
+        while address < max_address:
+            try:
+                mbi = pymem.memory.virtual_query(self.pm.process_handle, address)
+            except Exception:
+                break
+
+            base = int(mbi.BaseAddress)
+            size = int(mbi.RegionSize)
+            if size <= 0:
+                address += 0x1000
+                continue
+
+            protect = int(mbi.Protect)
+            base_protect = protect & 0xFF
+            is_readable = (
+                int(mbi.State) == self.MEM_COMMIT and
+                base_protect in self.READABLE_PROTECTIONS and
+                not (protect & self.PAGE_GUARD) and
+                not (protect & self.PAGE_NOACCESS)
+            )
+            if is_readable:
+                yield base, size
+
+            address = base + size
+
+    def _scan_bytes_for_range(self, base_address, block, min_value, max_value, results, max_results, module_filter=None):
+        for local_offset in range(0, len(block) - 8, 8):
+            value = struct.unpack_from("<d", block, local_offset)[0]
             if not math.isfinite(value):
                 continue
             if value < min_value or value > max_value:
                 continue
+
+            address = base_address + local_offset
+            desc = self.describe_address(address)
+            if module_filter and desc["module"].lower() != module_filter.lower():
+                continue
             results.append({
-                "address": self.base_addr + offset,
-                "rva": offset,
+                "address": address,
+                "rva": desc["rva"],
+                "expr": desc["expr"],
+                "module": desc["module"],
+                "ref": desc["ref"],
                 "value": value
             })
+            if len(results) >= max_results:
+                return False
+        return True
+
+    def _scan_block_for_range(self, min_value, max_value, scope="all", max_results=5000):
+        self.ensure_attached()
+        results = []
+        chunk_size = 16 * 1024 * 1024
+        module_filter = "cloudmusic.dll" if scope == "cloudmusic.dll" else None
+
+        for region_base, region_size in self._iter_readable_regions():
+            read_offset = 0
+            while read_offset < region_size:
+                size = min(chunk_size, region_size - read_offset)
+                try:
+                    block = self.pm.read_bytes(region_base + read_offset, size)
+                except Exception:
+                    break
+                keep_scanning = self._scan_bytes_for_range(
+                    region_base + read_offset,
+                    block,
+                    min_value,
+                    max_value,
+                    results,
+                    max_results,
+                    module_filter=module_filter
+                )
+                if not keep_scanning:
+                    return results
+                read_offset += size
 
         return results
+
+    def _candidate_with_live_value(self, item):
+        value = MemoryUtils.read_double_safe(self.pm, item["address"])
+        if value is None:
+            return None
+        clone = dict(item)
+        clone["value"] = value
+        return clone
+
+    def address_from_expr(self, raw_value):
+        parsed = parse_address_expression(raw_value)
+        if not parsed:
+            return None
+        if parsed["ref"] == "absolute":
+            return parsed["value"]
+        module_name = parsed["module"] or "cloudmusic.dll"
+        if module_name.lower() == "cloudmusic.dll":
+            return self.base_addr + parsed["value"]
+        try:
+            module = pymem.process.module_from_name(self.pm.process_handle, module_name)
+            if module:
+                return int(module.lpBaseOfDll) + parsed["value"]
+        except Exception:
+            pass
+        return None
+
+    def layout_part_from_expr(self, raw_value):
+        parsed = parse_address_expression(raw_value)
+        if not parsed:
+            return None
+        return parsed
+
+    def display_expr_for_candidate(self, item):
+        return item.get("expr") or f"cloudmusic.dll+0x{int(item['rva']):X}"
 
     def _refresh_candidates(self, candidates):
         refreshed = []
         for item in candidates:
-            value = MemoryUtils.read_double_safe(self.pm, item["address"])
-            if value is None:
+            clone = self._candidate_with_live_value(item)
+            if not clone:
                 continue
-            clone = dict(item)
-            clone["value"] = value
             refreshed.append(clone)
         return refreshed
 
@@ -592,16 +827,16 @@ class GuidedOffsetScanner:
         refreshed = self._refresh_candidates(candidates)
         return [item for item in refreshed if min_value <= item["value"] <= max_value]
 
-    def scan_current(self, min_value, max_value):
-        self.current_candidates = self._scan_block_for_range(min_value, max_value)
+    def scan_current(self, min_value, max_value, scope="all"):
+        self.current_candidates = self._scan_block_for_range(min_value, max_value, scope=scope)
         return list(self.current_candidates)
 
     def rescan_current(self, min_value, max_value):
         self.current_candidates = self._filter_candidates(self.current_candidates, min_value, max_value)
         return list(self.current_candidates)
 
-    def scan_total(self, min_value, max_value):
-        self.total_candidates = self._scan_block_for_range(min_value, max_value)
+    def scan_total(self, min_value, max_value, scope="all"):
+        self.total_candidates = self._scan_block_for_range(min_value, max_value, scope=scope)
         return list(self.total_candidates)
 
     def rescan_total(self, min_value, max_value):
@@ -1356,6 +1591,32 @@ def parse_offset_value(raw_value):
         return int(text, 16)
     return int(text)
 
+def parse_address_expression(raw_value, default_module="cloudmusic.dll"):
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+
+    if text.lower().startswith("abs:"):
+        return {
+            "value": parse_offset_value(text.split(":", 1)[1]),
+            "ref": "absolute",
+            "module": ""
+        }
+
+    if "+" in text:
+        module_name, offset_text = text.split("+", 1)
+        return {
+            "value": parse_offset_value(offset_text),
+            "ref": "module",
+            "module": module_name.strip() or default_module
+        }
+
+    return {
+        "value": parse_offset_value(text),
+        "ref": "module",
+        "module": default_module
+    }
+
 def launch_locator_gui(locator):
     import tkinter as tk
     from tkinter import messagebox, ttk
@@ -1405,7 +1666,7 @@ def launch_locator_gui(locator):
                 values=(
                     idx + 1,
                     f"0x{item['address']:X}",
-                    f"0x{item['rva']:08X}",
+                    scanner.display_expr_for_candidate(item),
                     value,
                     extra
                 )
@@ -1439,21 +1700,22 @@ def launch_locator_gui(locator):
         id_item = selected_candidate("id")
 
         if current_item:
-            curr_var.set(fmt(current_item["rva"]))
+            curr_var.set(scanner.display_expr_for_candidate(current_item))
 
         if total_item:
-            total_var.set(fmt(total_item["rva"]))
-            total_info = scanner.describe_candidate(total_item)
-            ptr_guess = total_info["ptr_static_offset"]
-            if ptr_guess > 0:
-                ptr_var.set(fmt(ptr_guess))
-            if total_info.get("song_id"):
-                update_status(
-                    f"已选总时长候选 0x{total_item['rva']:08X}，推导 PTR_STATIC_OFFSET={fmt(ptr_guess)}，歌曲ID={total_info['song_id']}"
-                )
+            total_var.set(scanner.display_expr_for_candidate(total_item))
+            if total_item.get("module", "").lower() == "cloudmusic.dll":
+                total_info = scanner.describe_candidate(total_item)
+                ptr_guess = total_info["ptr_static_offset"]
+                if ptr_guess > 0:
+                    ptr_var.set(fmt(ptr_guess))
+                if total_info.get("song_id"):
+                    update_status(
+                        f"已选总时长候选 {scanner.display_expr_for_candidate(total_item)}，推导 PTR_STATIC_OFFSET={fmt(ptr_guess)}，歌曲ID={total_info['song_id']}"
+                    )
         if id_item:
-            ptr_var.set(fmt(id_item["rva"]))
-            update_status(f"已选歌曲ID候选 0x{id_item['rva']:08X} -> {id_item.get('song_id')}")
+            ptr_var.set(scanner.display_expr_for_candidate(id_item))
+            update_status(f"已选歌曲ID候选 {scanner.display_expr_for_candidate(id_item)} -> {id_item.get('song_id')}")
 
         refresh_preview()
 
@@ -1462,11 +1724,11 @@ def launch_locator_gui(locator):
             scanner.ensure_attached()
             if kind == "current":
                 min_value, max_value = parse_seconds(curr_seconds_var.get(), curr_tol_var.get())
-                candidates = scanner.rescan_current(min_value, max_value) if rescan else scanner.scan_current(min_value, max_value)
+                candidates = scanner.rescan_current(min_value, max_value) if rescan else scanner.scan_current(min_value, max_value, scope=scan_scope_var.get())
                 fill_tree(current_tree, candidates, "current")
             elif kind == "total":
                 min_value, max_value = parse_seconds(total_seconds_var.get(), total_tol_var.get())
-                candidates = scanner.rescan_total(min_value, max_value) if rescan else scanner.scan_total(min_value, max_value)
+                candidates = scanner.rescan_total(min_value, max_value) if rescan else scanner.scan_total(min_value, max_value, scope=scan_scope_var.get())
                 fill_tree(total_tree, candidates, "total")
             else:
                 target_song_id = int(id_target_var.get().strip())
@@ -1477,7 +1739,10 @@ def launch_locator_gui(locator):
                     center_rva = parse_offset_value(center_text) if center_text else None
                     radius = parse_offset_value(id_radius_var.get()) if id_radius_var.get().strip() else 0x40000
                     step = parse_offset_value(id_step_var.get()) if id_step_var.get().strip() else 8
-                    total_hint = parse_offset_value(total_var.get()) if total_var.get().strip() else None
+                    total_hint = None
+                    total_part = scanner.layout_part_from_expr(total_var.get()) if total_var.get().strip() else None
+                    if total_part and total_part["ref"] == "module" and total_part["module"].lower() == "cloudmusic.dll":
+                        total_hint = total_part["value"]
                     candidates = scanner.scan_id(
                         target_song_id,
                         center_rva=center_rva,
@@ -1543,13 +1808,15 @@ def launch_locator_gui(locator):
             return
 
         try:
-            curr_rva = parse_offset_value(curr_var.get()) if curr_var.get().strip() else None
-            total_rva = parse_offset_value(total_var.get()) if total_var.get().strip() else None
-            ptr_rva = parse_offset_value(ptr_var.get()) if ptr_var.get().strip() else None
+            curr_addr = scanner.address_from_expr(curr_var.get()) if curr_var.get().strip() else None
+            total_addr = scanner.address_from_expr(total_var.get()) if total_var.get().strip() else None
+            ptr_part = scanner.layout_part_from_expr(ptr_var.get()) if ptr_var.get().strip() else None
 
-            curr_value = MemoryUtils.read_double_safe(scanner.pm, scanner.base_addr + curr_rva) if curr_rva is not None else None
-            total_value = MemoryUtils.read_double_safe(scanner.pm, scanner.base_addr + total_rva) if total_rva is not None else None
-            song_id = scanner._read_song_id_from_ptr(ptr_rva) if ptr_rva is not None else None
+            curr_value = MemoryUtils.read_double_safe(scanner.pm, curr_addr) if curr_addr is not None else None
+            total_value = MemoryUtils.read_double_safe(scanner.pm, total_addr) if total_addr is not None else None
+            song_id = None
+            if ptr_part and ptr_part["ref"] == "module" and ptr_part["module"].lower() == "cloudmusic.dll":
+                song_id = scanner._read_song_id_from_ptr(ptr_part["value"])
 
             preview_curr_var.set(f"{curr_value:.6f}" if curr_value is not None else "无效")
             preview_total_var.set(f"{total_value:.6f}" if total_value is not None else "无效")
@@ -1563,10 +1830,11 @@ def launch_locator_gui(locator):
             else:
                 preview_song_var.set("")
 
-            if ptr_rva is not None:
+            if ptr_part is not None:
                 if not id_target_var.get().strip() and song_id:
                     id_target_var.set(str(song_id))
-                id_center_var.set(fmt(ptr_rva))
+                if ptr_part["ref"] == "module" and ptr_part["module"].lower() == "cloudmusic.dll":
+                    id_center_var.set(fmt(ptr_part["value"]))
         except Exception:
             preview_curr_var.set("无效")
             preview_total_var.set("无效")
@@ -1579,19 +1847,35 @@ def launch_locator_gui(locator):
 
     def save_layout():
         try:
-            off_curr = parse_offset_value(curr_var.get())
-            off_total = parse_offset_value(total_var.get())
+            curr_part = scanner.layout_part_from_expr(curr_var.get())
+            total_part = scanner.layout_part_from_expr(total_var.get())
+            if not curr_part or not total_part:
+                raise ValueError("OFF_CURR/OFF_TOTAL 不能为空")
+            off_curr = curr_part["value"]
+            off_total = total_part["value"]
             ptr_text = ptr_var.get().strip()
-            ptr_static = parse_offset_value(ptr_text) if ptr_text else None
+            ptr_part = scanner.layout_part_from_expr(ptr_text) if ptr_text else None
+            if ptr_part and (ptr_part["ref"] != "module" or ptr_part["module"].lower() != "cloudmusic.dll"):
+                raise ValueError("歌曲ID指针目前仍需要 cloudmusic.dll+偏移，不能保存为绝对地址")
+            ptr_static = ptr_part["value"] if ptr_part else None
             fingerprint = ""
             try:
                 fingerprint = scanner.fingerprint()
             except Exception:
                 fingerprint = "manual-entry"
-            saved_layout = locator.apply_manual_layout(off_curr, off_total, ptr_static, fingerprint=fingerprint)
+            saved_layout = locator.apply_manual_layout(
+                off_curr,
+                off_total,
+                ptr_static,
+                fingerprint=fingerprint,
+                off_curr_ref=curr_part["ref"],
+                off_curr_module=curr_part["module"],
+                off_total_ref=total_part["ref"],
+                off_total_module=total_part["module"]
+            )
             update_status(f"已保存到 {locator.get_cache_path()} | fingerprint={fingerprint}")
             current_saved_var.set(
-                f"OFF_CURR={fmt(saved_layout['off_curr'])} | OFF_TOTAL={fmt(saved_layout['off_total'])} | PTR_STATIC_OFFSET={fmt(saved_layout['ptr_static_offset'])}"
+                f"OFF_CURR={curr_var.get()} | OFF_TOTAL={total_var.get()} | PTR_STATIC_OFFSET={ptr_var.get()}"
             )
             messagebox.showinfo(
                 "保存成功",
@@ -1607,9 +1891,10 @@ def launch_locator_gui(locator):
 
     status_var = tk.StringVar(value="准备就绪")
     curr_seconds_var = tk.StringVar(value="75")
-    curr_tol_var = tk.StringVar(value="0.6")
+    curr_tol_var = tk.StringVar(value="1")
     total_seconds_var = tk.StringVar(value="240")
-    total_tol_var = tk.StringVar(value="0.8")
+    total_tol_var = tk.StringVar(value="1")
+    scan_scope_var = tk.StringVar(value="cloudmusic.dll")
     id_target_var = tk.StringVar(value="")
     id_radius_var = tk.StringVar(value="0x40000")
     id_step_var = tk.StringVar(value="0x8")
@@ -1644,6 +1929,13 @@ def launch_locator_gui(locator):
     tk.Button(top_bar, text="附加网易云进程", command=attach_process, width=18).pack(side="left")
     tk.Button(top_bar, text="刷新候选当前值", command=refresh_live, width=16).pack(side="left", padx=8)
     tk.Button(top_bar, text="立即刷新预览", command=refresh_preview, width=14).pack(side="left", padx=8)
+    ttk.Combobox(
+        top_bar,
+        textvariable=scan_scope_var,
+        values=("all", "cloudmusic.dll"),
+        width=14,
+        state="readonly"
+    ).pack(side="left", padx=8)
     tk.Label(top_bar, textvariable=status_var, anchor="w").pack(side="left", padx=12)
 
     scan_frame = tk.Frame(root)
@@ -1695,7 +1987,7 @@ def launch_locator_gui(locator):
     for tree in (current_tree, total_tree, id_tree):
         tree.heading("idx", text="#")
         tree.heading("addr", text="绝对地址")
-        tree.heading("rva", text="cloudmusic.dll+偏移")
+        tree.heading("rva", text="模块+偏移 / 绝对地址")
         tree.heading("value", text="当前值/歌曲ID")
         tree.heading("extra", text="附加信息")
         tree.column("idx", width=50, anchor="center")
@@ -1817,18 +2109,18 @@ def monitor_loop(v3, lrc_svc, locator):
                     with state_lock:
                         API_STATE['memory_locator'] = locator.get_status()
 
-                ct = MemoryUtils.read_double_safe(pm, base + layout["off_curr"])
-                tt = MemoryUtils.read_double_safe(pm, base + layout["off_total"])
-                if not locator.is_runtime_progress_valid(ct, tt):
-                    invalid_progress_reads += 1
-                    if invalid_progress_reads >= 3:
-                        print("[Locator] 进度地址疑似失效，尝试自动重定位...")
-                        layout = locator.resolve(pm, mod, force_rescan=True)
-                        invalid_progress_reads = 0
-                        with state_lock:
-                            API_STATE['memory_locator'] = locator.get_status()
-                        ct = MemoryUtils.read_double_safe(pm, base + layout["off_curr"])
-                        tt = MemoryUtils.read_double_safe(pm, base + layout["off_total"])
+                ct = locator._read_layout_double(pm, mod, layout, "off_curr")
+                tt = locator._read_layout_double(pm, mod, layout, "off_total")
+                # if not locator.is_runtime_progress_valid(ct, tt):
+                #     invalid_progress_reads += 1
+                #     if invalid_progress_reads >= 3:
+                #         print("[Locator] 进度地址疑似失效，尝试自动重定位...")
+                #         layout = locator.resolve(pm, mod, force_rescan=True)
+                #         invalid_progress_reads = 0
+                #         with state_lock:
+                #             API_STATE['memory_locator'] = locator.get_status()
+                #         ct = locator._read_layout_double(pm, mod, layout, "off_curr")
+                #         tt = locator._read_layout_double(pm, mod, layout, "off_total")
 
                 if not locator.is_runtime_progress_valid(ct, tt):
                     ct = last_ct if last_ct >= 0 else 0.0
@@ -2097,7 +2389,15 @@ def set_locator_manual():
                 mimetype='application/json'
             )
 
-        layout = offset_resolver.apply_manual_layout(off_curr, off_total, ptr_static_offset)
+        layout = offset_resolver.apply_manual_layout(
+            off_curr,
+            off_total,
+            ptr_static_offset,
+            off_curr_ref=payload.get("off_curr_ref", "module"),
+            off_curr_module=payload.get("off_curr_module", "cloudmusic.dll"),
+            off_total_ref=payload.get("off_total_ref", "module"),
+            off_total_module=payload.get("off_total_module", "cloudmusic.dll")
+        )
         with state_lock:
             API_STATE["memory_locator"] = offset_resolver.get_status()
 
