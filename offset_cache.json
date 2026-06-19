@@ -47,11 +47,30 @@
       "off_total_module": "cloudmusic.dll",
       "source": "manual_override",
       "fingerprint": "cloudmusic.dll|img=37281792|file=33969664|mtime=1780030708",
-      "validated_at": 1780597963
+      "validated_at": 1781903469
+    },
+    "cloudmusic.dll|img=37515264|file=34208256|mtime=1780926412": {
+      "ptr_static_offset": 32343632,
+      "ptr_offsets": [
+        16,
+        0,
+        16,
+        104,
+        0
+      ],
+      "off_curr": 31947096,
+      "off_total": 32346968,
+      "off_curr_ref": "module",
+      "off_curr_module": "cloudmusic.dll",
+      "off_total_ref": "module",
+      "off_total_module": "cloudmusic.dll",
+      "source": "manual_override",
+      "fingerprint": "cloudmusic.dll|img=37515264|file=34208256|mtime=1780926412",
+      "validated_at": 1781903699
     }
   },
   "manual_override": {
-    "ptr_static_offset": 32118160,
+    "ptr_static_offset": 32343632,
     "ptr_offsets": [
       16,
       0,
@@ -59,14 +78,14 @@
       104,
       0
     ],
-    "off_curr": 31725888,
-    "off_total": 32121496,
+    "off_curr": 31947096,
+    "off_total": 32346968,
     "off_curr_ref": "module",
     "off_curr_module": "cloudmusic.dll",
     "off_total_ref": "module",
     "off_total_module": "cloudmusic.dll",
     "source": "manual_override",
-    "fingerprint": "cloudmusic.dll|img=37281792|file=33969664|mtime=1780030708",
-    "validated_at": 1780597735
+    "fingerprint": "cloudmusic.dll|img=37515264|file=34208256|mtime=1780926412",
+    "validated_at": 1781903699
   }
 }
